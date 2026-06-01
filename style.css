@@ -1,52 +1,65 @@
 /* ====================================================================
-   Todo Dropdown Extension - Milestone 1
-   "Notion-ish" airy/soft style. Theme variables auto-switch via the
-   [data-td-theme] attribute set on the panel root by detectTheme().
+   Todo Dropdown Extension - Milestone 3
+   Adds: tabs, code-link chips, "From code" section, type tags.
    ==================================================================== */
 
 /* -------- Theme tokens -------- */
 
 #td-dropdown[data-td-theme="light"] {
-    --td-bg:          #ffffff;
-    --td-bg-header:   #fbfbfa;
-    --td-bg-hover:    rgba(55, 53, 47, 0.05);
-    --td-bg-input:    #f6f6f5;
+    --td-bg:             #ffffff;
+    --td-bg-header:      #fbfbfa;
+    --td-bg-hover:       rgba(55, 53, 47, 0.05);
+    --td-bg-input:       #f6f6f5;
     --td-bg-input-focus: #ffffff;
-    --td-border:      rgba(55, 53, 47, 0.10);
-    --td-divider:     rgba(55, 53, 47, 0.07);
-    --td-text:        #37352f;
-    --td-text-muted:  #9b9a97;
-    --td-text-soft:   #6b6a65;
-    --td-text-done:   #9b9a97;
-    --td-accent:      #2eaadc;
-    --td-accent-soft: rgba(46, 170, 220, 0.12);
-    --td-danger:      #e03e3e;
-    --td-danger-bg:   rgba(224, 62, 62, 0.10);
-    --td-shadow:      0 8px 28px rgba(15, 15, 15, 0.10),
-                      0 2px 6px  rgba(15, 15, 15, 0.06);
-    --td-check-empty: #d9d9d6;
+    --td-bg-chip:        rgba(55, 53, 47, 0.06);
+    --td-border:         rgba(55, 53, 47, 0.10);
+    --td-divider:        rgba(55, 53, 47, 0.07);
+    --td-text:           #37352f;
+    --td-text-muted:     #9b9a97;
+    --td-text-soft:      #6b6a65;
+    --td-text-done:      #9b9a97;
+    --td-accent:         #2eaadc;
+    --td-accent-soft:    rgba(46, 170, 220, 0.12);
+    --td-danger:         #e03e3e;
+    --td-danger-bg:      rgba(224, 62, 62, 0.10);
+    --td-shadow:         0 8px 28px rgba(15, 15, 15, 0.10),
+                         0 2px 6px  rgba(15, 15, 15, 0.06);
+    --td-check-empty:    #d9d9d6;
+    --td-tag-todo:       #2eaadc;
+    --td-tag-fixme:      #e03e3e;
+    --td-tag-hack:       #d9730d;
+    --td-tag-bug:        #e03e3e;
+    --td-tag-xxx:        #9065b0;
+    --td-tag-note:       #6b6a65;
 }
 
 #td-dropdown[data-td-theme="dark"],
 #td-dropdown:not([data-td-theme]) {
-    --td-bg:          #1f1f1f;
-    --td-bg-header:   #1a1a1a;
-    --td-bg-hover:    rgba(255, 255, 255, 0.05);
-    --td-bg-input:    #2a2a2a;
+    --td-bg:             #1f1f1f;
+    --td-bg-header:      #1a1a1a;
+    --td-bg-hover:       rgba(255, 255, 255, 0.05);
+    --td-bg-input:       #2a2a2a;
     --td-bg-input-focus: #2e2e2e;
-    --td-border:      rgba(255, 255, 255, 0.08);
-    --td-divider:     rgba(255, 255, 255, 0.06);
-    --td-text:        #e8e8e8;
-    --td-text-muted:  #6f6f6f;
-    --td-text-soft:   #a0a0a0;
-    --td-text-done:   #6f6f6f;
-    --td-accent:      #529cca;
-    --td-accent-soft: rgba(82, 156, 202, 0.18);
-    --td-danger:      #ff6b6b;
-    --td-danger-bg:   rgba(255, 107, 107, 0.14);
-    --td-shadow:      0 12px 32px rgba(0, 0, 0, 0.45),
-                      0 3px 8px   rgba(0, 0, 0, 0.30);
-    --td-check-empty: #3a3a3a;
+    --td-bg-chip:        rgba(255, 255, 255, 0.07);
+    --td-border:         rgba(255, 255, 255, 0.08);
+    --td-divider:        rgba(255, 255, 255, 0.06);
+    --td-text:           #e8e8e8;
+    --td-text-muted:     #6f6f6f;
+    --td-text-soft:      #a0a0a0;
+    --td-text-done:      #6f6f6f;
+    --td-accent:         #529cca;
+    --td-accent-soft:    rgba(82, 156, 202, 0.18);
+    --td-danger:         #ff6b6b;
+    --td-danger-bg:      rgba(255, 107, 107, 0.14);
+    --td-shadow:         0 12px 32px rgba(0, 0, 0, 0.45),
+                         0 3px 8px   rgba(0, 0, 0, 0.30);
+    --td-check-empty:    #3a3a3a;
+    --td-tag-todo:       #5fb8e6;
+    --td-tag-fixme:      #ff6b6b;
+    --td-tag-hack:       #f0a85a;
+    --td-tag-bug:        #ff6b6b;
+    --td-tag-xxx:        #c08fdd;
+    --td-tag-note:       #a0a0a0;
 }
 
 /* -------- Toolbar button -------- */
@@ -65,14 +78,12 @@
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease;
 }
-
 #td-toolbar-btn:hover,
 #td-toolbar-btn:focus {
     background-color: rgba(255, 255, 255, 0.08);
     color: #ffffff;
     outline: none;
 }
-
 #td-toolbar-btn svg { display: block; }
 
 .td-toolbar-badge {
@@ -97,8 +108,8 @@
 
 .td-dropdown {
     position: fixed;
-    width: 320px;
-    max-height: 460px;
+    width: 340px;
+    max-height: 560px;
     background: var(--td-bg);
     color: var(--td-text);
     border: 1px solid var(--td-border);
@@ -115,38 +126,81 @@
     transform-origin: top right;
 }
 
-/* Open animation */
-.td-dropdown.td-opening {
-    animation: tdFadeIn 160ms ease-out both;
-}
+.td-dropdown.td-opening { animation: tdFadeIn 160ms ease-out both; }
 @keyframes tdFadeIn {
     from { opacity: 0; transform: translateY(-4px) scale(0.985); }
     to   { opacity: 1; transform: translateY(0)     scale(1); }
 }
 
-/* -------- Header -------- */
+/* -------- Header (tabs + ⋯) -------- */
 
 .td-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 14px 10px 16px;
+    padding: 8px 10px 8px 10px;
     border-bottom: 1px solid var(--td-divider);
     background: var(--td-bg-header);
     border-top-left-radius: 8px;
     border-top-right-radius: 8px;
+    gap: 8px;
 }
 
-.td-title {
-    font-weight: 600;
-    font-size: 13.5px;
+.td-tabs {
+    display: inline-flex;
+    align-items: center;
+    background: var(--td-bg-chip);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+}
+
+.td-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: transparent;
+    color: var(--td-text-soft);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 500;
+    transition: background-color 0.12s ease, color 0.12s ease,
+                box-shadow 0.12s ease;
+}
+.td-tab:hover { color: var(--td-text); }
+.td-tab.td-tab-active {
+    background: var(--td-bg);
     color: var(--td-text);
-    letter-spacing: 0.1px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.10);
+}
+.td-tab.td-tab-disabled,
+.td-tab[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.td-tab-count {
+    display: inline-block;
+    min-width: 16px;
+    padding: 0 5px;
+    border-radius: 8px;
+    background: var(--td-bg-chip);
+    color: var(--td-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 14px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.td-tab.td-tab-active .td-tab-count {
+    background: var(--td-accent-soft);
+    color: var(--td-accent);
 }
 
 .td-menu-btn {
-    width: 24px;
-    height: 24px;
+    width: 24px; height: 24px;
     padding: 0;
     background: transparent;
     color: var(--td-text-soft);
@@ -158,8 +212,7 @@
     justify-content: center;
     transition: background-color 0.12s ease, color 0.12s ease;
 }
-.td-menu-btn:hover,
-.td-menu-btn:focus {
+.td-menu-btn:hover, .td-menu-btn:focus {
     background: var(--td-bg-hover);
     color: var(--td-text);
     outline: none;
@@ -174,7 +227,6 @@
     gap: 8px;
     border-bottom: 1px solid var(--td-divider);
 }
-
 .td-input {
     flex: 1;
     height: 32px;
@@ -194,10 +246,8 @@
     border-color: var(--td-accent);
     box-shadow: 0 0 0 3px var(--td-accent-soft);
 }
-
 .td-add-btn {
-    width: 32px;
-    height: 32px;
+    width: 32px; height: 32px;
     flex: 0 0 32px;
     background: var(--td-accent);
     color: #ffffff;
@@ -217,22 +267,17 @@
 
 .td-body {
     overflow-y: auto;
-    max-height: 360px;
+    max-height: 440px;
     padding: 4px 0 8px 0;
     position: relative;
 }
-
-.td-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
+.td-list { list-style: none; margin: 0; padding: 0; }
 
 /* -------- Task row -------- */
 
 .td-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     padding: 8px 14px;
     min-height: 40px;
     cursor: pointer;
@@ -248,9 +293,9 @@
 .td-item:hover         { background: var(--td-bg-hover); }
 .td-item:focus-visible { background: var(--td-bg-hover); outline: none; }
 
-/* Custom checkbox */
 .td-checkbox {
     flex: 0 0 16px;
+    margin-top: 3px; /* aligns with first line of text */
     width: 16px;
     height: 16px;
     border-radius: 4px;
@@ -270,9 +315,15 @@
 }
 .td-item.td-done .td-checkbox svg { opacity: 1; }
 
-/* Task text */
-.td-text {
+.td-task-content {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.td-text {
     word-break: break-word;
     line-height: 1.45;
     color: var(--td-text);
@@ -287,11 +338,10 @@
     text-decoration-color: var(--td-text-done);
 }
 
-/* Delete (trash) */
 .td-delete {
     flex: 0 0 auto;
-    width: 24px;
-    height: 24px;
+    width: 24px; height: 24px;
+    margin-top: -1px;
     background: transparent;
     color: var(--td-text-muted);
     border: none;
@@ -309,15 +359,64 @@
 .td-item:focus-within .td-delete { opacity: 1; }
 .td-delete:hover { background: var(--td-danger-bg); color: var(--td-danger); }
 
-/* -------- Completed section -------- */
+/* -------- Code-link chip -------- */
 
-.td-completed-section {
+.td-code-link {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 6px 2px 5px;
+    background: var(--td-bg-chip);
+    color: var(--td-text-soft);
+    border-radius: 4px;
+    font-size: 11.5px;
+    text-decoration: none;
+    line-height: 1.3;
+    max-width: 100%;
+    transition: background-color 0.1s ease, color 0.1s ease;
+}
+.td-code-link:hover {
+    background: var(--td-accent-soft);
+    color: var(--td-accent);
+}
+.td-code-link .td-link-icon { flex: 0 0 11px; }
+.td-code-link-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* -------- Type tags (TODO, FIXME, ...) -------- */
+
+.td-tag {
+    display: inline-block;
+    padding: 0 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    line-height: 14px;
+    color: #ffffff;
+    text-transform: uppercase;
+}
+.td-tag-todo  { background: var(--td-tag-todo); }
+.td-tag-fixme { background: var(--td-tag-fixme); }
+.td-tag-hack  { background: var(--td-tag-hack); }
+.td-tag-bug   { background: var(--td-tag-bug); }
+.td-tag-xxx   { background: var(--td-tag-xxx); }
+.td-tag-note  { background: var(--td-tag-note); }
+
+/* -------- Section toggles (Completed, From code) -------- */
+
+.td-completed-section,
+.td-from-code-section {
     margin-top: 4px;
     padding-top: 4px;
     border-top: 1px solid var(--td-divider);
 }
 
-.td-completed-toggle {
+.td-section-toggle {
     display: flex;
     align-items: center;
     width: 100%;
@@ -332,28 +431,39 @@
     gap: 8px;
     transition: background-color 0.1s ease, color 0.1s ease;
 }
-.td-completed-toggle:hover { background: var(--td-bg-hover); color: var(--td-text); }
-
-.td-chevron {
-    transition: transform 0.15s ease;
+.td-section-toggle:hover {
+    background: var(--td-bg-hover);
+    color: var(--td-text);
 }
-.td-completed-section:not(.td-collapsed) .td-chevron {
+
+.td-chevron { transition: transform 0.15s ease; }
+.td-completed-section:not(.td-collapsed) .td-chevron,
+.td-from-code-section:not(.td-collapsed)  .td-chevron {
     transform: rotate(90deg);
 }
 
-.td-completed-label { flex: 1; }
-.td-completed-count {
+.td-section-label { flex: 1; }
+.td-section-count {
     color: var(--td-text-muted);
     font-variant-numeric: tabular-nums;
 }
-
-.td-completed-section.td-collapsed .td-completed-list {
-    display: none;
+.td-from-code-status {
+    margin-left: 6px;
+    color: var(--td-text-muted);
+    font-size: 11px;
+    font-weight: 400;
+    font-style: italic;
 }
 
-/* Faded completed items */
-.td-completed-list .td-item .td-text {
-    color: var(--td-text-done);
+.td-completed-section.td-collapsed .td-completed-list { display: none; }
+.td-from-code-section.td-collapsed  .td-from-code-list  { display: none; }
+
+.td-completed-list .td-item .td-text { color: var(--td-text-done); }
+
+/* From-code items: no trash, but checkbox dismisses */
+.td-from-code-item .td-checkbox { border-color: var(--td-check-empty); }
+.td-from-code-item:hover .td-checkbox {
+    border-color: var(--td-accent);
 }
 
 /* -------- Empty state -------- */
@@ -383,9 +493,9 @@
 
 .td-menu {
     position: absolute;
-    top: 40px;
+    top: 44px;
     right: 10px;
-    min-width: 180px;
+    min-width: 200px;
     background: var(--td-bg);
     border: 1px solid var(--td-border);
     border-radius: 6px;
@@ -394,7 +504,6 @@
     z-index: 1;
     animation: tdFadeIn 120ms ease-out both;
 }
-
 .td-menu-item {
     display: flex;
     align-items: center;
@@ -411,13 +520,11 @@
     transition: background-color 0.1s ease;
 }
 .td-menu-item:hover { background: var(--td-bg-hover); }
-
 .td-menu-divider {
     height: 1px;
     background: var(--td-divider);
     margin: 4px 2px;
 }
-
 .td-menu-section-label {
     padding: 6px 10px 4px;
     font-size: 11px;
@@ -426,7 +533,6 @@
     text-transform: uppercase;
     letter-spacing: 0.4px;
 }
-
 .td-menu-check {
     width: 14px;
     color: var(--td-accent);
