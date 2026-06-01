@@ -1,17 +1,18 @@
 {
-    "title": "To-Do Dropdown",
-    "name": "todo-dropdown",
-    "description": "A simple dropdown to-do list. Click the arrow button in the toolbar to add tasks; click a task to strike it through.",
-    "version": "0.0.1",
+    "title": "todu",
+    "name": "github-electrofist-toduextension",
+    "description": "A Notion-style to-do dropdown for Phoenix Code. Per-project tasks, due dates, priority, tags, subtasks, and an auto-scanner that surfaces TODO/FIXME comments in your code.",
+    "version": "1.0.0",
     "license": "MIT",
-    "author": "Phoenix Designer",
-    "homepage": "https://github.com/your-username/todo-dropdown",
+    "author": "Krrish (https://github.com/Electrofist)",
+    "homepage": "https://github.com/Electrofist/ToduExtension",
     "engines": {
         "brackets": ">=2.0.0"
     },
     "categories": "productivity",
     "keywords": [
-        "phcode", "extension", "todo", "tasks", "productivity"
+        "phcode", "extension", "todo", "tasks", "productivity", "todu",
+        "checklist", "due-dates", "subtasks"
     ],
     "files": [
         "main.js",
