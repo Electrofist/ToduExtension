@@ -5,7 +5,7 @@
     "version": "0.0.1",
     "license": "MIT",
     "author": "Phoenix Designer",
-    "homepage": "",
+    "homepage": "https://github.com/your-username/todo-dropdown",
     "engines": {
         "brackets": ">=2.0.0"
     },
