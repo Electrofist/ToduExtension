@@ -1,20 +1,20 @@
 {
-    "title": "Name of the extension",
-    "name": "github-<owner>-<repo>",
-    "description": "A sample extension.",
+    "title": "To-Do Dropdown",
+    "name": "todo-dropdown",
+    "description": "A simple dropdown to-do list. Click the arrow button in the toolbar to add tasks; click a task to strike it through.",
     "version": "0.0.1",
     "license": "MIT",
-    "author": "your name (https://github.com/<your github id>)",
-    "homepage": "<project web page url or this github repo url if no website available>",
+    "author": "Phoenix Designer",
+    "homepage": "",
     "engines": {
         "brackets": ">=2.0.0"
     },
-    "categories": "demo",
+    "categories": "productivity",
     "keywords": [
-        "phcode", "extension", "demo"
+        "phcode", "extension", "todo", "tasks", "productivity"
     ],
     "files": [
-        "main.js"
+        "main.js",
+        "style.css"
     ]
 }
-

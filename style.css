@@ -1,0 +1,198 @@
+/* Todo Dropdown Extension styles */
+
+/* ---------- Toolbar button ---------- */
+
+#td-toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    margin: 4px auto;
+    color: #cfcfcf;
+    text-decoration: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+#td-toolbar-btn:hover,
+#td-toolbar-btn:focus {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+    outline: none;
+}
+
+#td-toolbar-btn svg {
+    display: block;
+}
+
+/* ---------- Dropdown panel ---------- */
+
+.td-dropdown {
+    position: fixed;
+    width: 280px;
+    max-height: 380px;
+    background: #2c2e33;
+    color: #e6e6e6;
+    border: 1px solid #1c1d20;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.td-header {
+    padding: 10px 12px;
+    border-bottom: 1px solid #1c1d20;
+    background: #25272b;
+}
+
+.td-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #ffffff;
+    letter-spacing: 0.2px;
+}
+
+.td-input-row {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    gap: 8px;
+    border-bottom: 1px solid #1c1d20;
+}
+
+.td-input {
+    flex: 1;
+    height: 28px;
+    padding: 4px 8px;
+    background: #1f2024;
+    color: #e6e6e6;
+    border: 1px solid #3a3c42;
+    border-radius: 4px;
+    font-size: 13px;
+    outline: none;
+}
+
+.td-input:focus {
+    border-color: #5a8dee;
+}
+
+.td-add-btn {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    background: #5a8dee;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.15s ease;
+}
+
+.td-add-btn:hover {
+    background: #4a7ad8;
+}
+
+.td-add-btn:active {
+    background: #3d6cc4;
+}
+
+.td-list {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.td-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.1s ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.td-item:last-child {
+    border-bottom: none;
+}
+
+.td-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.td-text {
+    flex: 1;
+    word-break: break-word;
+    line-height: 1.4;
+}
+
+.td-item.td-done .td-text {
+    text-decoration: line-through;
+    color: #8a8a8a;
+}
+
+.td-delete {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    margin-left: 8px;
+    background: transparent;
+    color: #8a8a8a;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease, background-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.td-item:hover .td-delete {
+    opacity: 1;
+}
+
+.td-delete:hover {
+    background: rgba(255, 80, 80, 0.15);
+    color: #ff6b6b;
+}
+
+.td-empty {
+    padding: 18px 12px;
+    text-align: center;
+    color: #8a8a8a;
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* Scrollbar inside the list (Webkit) */
+.td-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.td-list::-webkit-scrollbar-thumb {
+    background: #3a3c42;
+    border-radius: 4px;
+}
+
+.td-list::-webkit-scrollbar-thumb:hover {
+    background: #4a4c52;
+}
+
+.td-list::-webkit-scrollbar-track {
+    background: transparent;
+}
