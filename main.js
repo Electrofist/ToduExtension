@@ -790,10 +790,20 @@ define(function (require, exports, module) {
     // -------- Toolbar button --------
     const $toolbarBtn = $(
         '<a href="#" id="td-toolbar-btn" title="To-Do list" aria-label="To-Do list">' +
+            // Lucide-style "list-todo" glyph: checked box + line above,
+            // empty box + line below. Reads as "checklist" at toolbar sizes.
             '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" ' +
-                'xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
-                '<path d="M5 8 L10 13 L15 8" stroke="currentColor" stroke-width="2" ' +
-                    'stroke-linecap="round" stroke-linejoin="round" fill="none"/>' +
+                'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" ' +
+                'stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+                // Top: checked box
+                '<rect x="3" y="3.5" width="5" height="5" rx="1.2"/>' +
+                '<path d="M4.2 6 L5.2 7 L6.8 5.2"/>' +
+                // Top: line beside box
+                '<path d="M11 6 L17 6"/>' +
+                // Bottom: empty box
+                '<rect x="3" y="11.5" width="5" height="5" rx="1.2"/>' +
+                // Bottom: line beside box
+                '<path d="M11 14 L17 14"/>' +
             '</svg>' +
             '<span class="td-toolbar-badge" style="display:none;">0</span>' +
         '</a>'
