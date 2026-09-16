@@ -516,16 +516,24 @@ define(function (require, exports, module) {
                         '<span class="td-tab-count">0</span>' +
                     '</button>' +
                 '</div>' +
-                '<button type="button" class="td-menu-btn" title="More" aria-label="More actions">' +
-                    '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">' +
-                        '<circle cx="3"  cy="8" r="1.4" fill="currentColor"/>' +
-                        '<circle cx="8"  cy="8" r="1.4" fill="currentColor"/>' +
-                        '<circle cx="13" cy="8" r="1.4" fill="currentColor"/>' +
-                    '</svg>' +
-                '</button>' +
+                '<div class="td-header-actions">' +
+                    '<button type="button" class="td-icon-btn td-stats-btn" title="Stats" aria-label="Toggle stats">' +
+                        '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" ' +
+                            'stroke="currentColor" stroke-width="1.7" stroke-linecap="round">' +
+                            '<path d="M3 13 V9"/><path d="M8 13 V4"/><path d="M13 13 V7"/>' +
+                        '</svg>' +
+                    '</button>' +
+                    '<button type="button" class="td-icon-btn td-menu-btn" title="More" aria-label="More actions">' +
+                        '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">' +
+                            '<circle cx="3"  cy="8" r="1.4" fill="currentColor"/>' +
+                            '<circle cx="8"  cy="8" r="1.4" fill="currentColor"/>' +
+                            '<circle cx="13" cy="8" r="1.4" fill="currentColor"/>' +
+                        '</svg>' +
+                    '</button>' +
+                '</div>' +
             '</div>' +
             '<div class="td-input-row">' +
-                '<input type="text" class="td-input" placeholder="New task... (try #tag)" maxlength="200" />' +
+                '<input type="text" class="td-input" placeholder="Add a task… try &quot;tomorrow 3pm #tag&quot;" maxlength="200" />' +
                 '<button type="button" class="td-add-btn" title="Add task" aria-label="Add task">' +
                     '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">' +
                         '<path d="M8 3v10 M3 8h10" stroke="currentColor" stroke-width="2" ' +
@@ -578,19 +586,28 @@ define(function (require, exports, module) {
                             'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" ' +
                             'fill="none" opacity="0.55"/>' +
                     '</svg>' +
-                    '<div class="td-empty-title">Nothing to do here.</div>' +
-                    '<div class="td-empty-sub">Add your first task above.</div>' +
+                    '<div class="td-empty-title">You\'re all clear</div>' +
+                    '<div class="td-empty-sub">Add a task above. A few things worth knowing:</div>' +
+                    '<ul class="td-empty-tips">' +
+                        '<li><code>tomorrow 3pm</code>, <code>friday</code>, <code>every weekday 9am</code> at the end of a task schedule it</li>' +
+                        '<li><code>#tag</code> anywhere to label it</li>' +
+                        '<li>Double-click a task to edit it</li>' +
+                        '<li>Right-click a line of code → <b>Add line to To-Do</b></li>' +
+                    '</ul>' +
                 '</div>' +
+            '</div>' +
+            '<div class="td-footer">' +
+                '<span class="td-footer-hint"><kbd class="td-kbd td-shortcut-kbd"></kbd> toggle</span>' +
+                '<span class="td-footer-hint"><kbd class="td-kbd">Double-click</kbd> edit</span>' +
             '</div>' +
             // Overflow menu (⋯)
             '<div class="td-menu" style="display:none;">' +
-                '<button type="button" class="td-menu-item" data-action="clear-completed">' +
-                    'Clear completed' +
-                '</button>' +
-                '<div class="td-menu-divider"></div>' +
+                '<div class="td-menu-section-label">View</div>' +
                 '<button type="button" class="td-menu-item" data-action="toggle-stats">' +
                     '<span class="td-menu-check">✓</span><span>Show stats</span>' +
                 '</button>' +
+                '<div class="td-menu-divider"></div>' +
+                '<div class="td-menu-section-label">Code</div>' +
                 '<button type="button" class="td-menu-item" data-action="toggle-code-scan">' +
                     '<span class="td-menu-check">✓</span><span>Scan code for TODOs</span>' +
                 '</button>' +
@@ -611,6 +628,10 @@ define(function (require, exports, module) {
                 '<button type="button" class="td-menu-item" data-action="sort-priority">' +
                     '<span class="td-menu-check">✓</span><span>Priority</span>' +
                 '</button>' +
+                '<div class="td-menu-divider"></div>' +
+                '<button type="button" class="td-menu-item td-menu-item-danger" data-action="clear-completed">' +
+                    '<span class="td-menu-check"></span><span>Clear completed</span>' +
+                '</button>' +
             '</div>' +
         '</div>'
     ).appendTo("body");
@@ -618,6 +639,7 @@ define(function (require, exports, module) {
     // Date preset popover (separate floating element, also under body)
     const $datePopover = $(
         '<div class="td-date-popover" style="display:none;">' +
+            '<div class="td-date-section-label">Due</div>' +
             '<button type="button" class="td-date-option" data-preset="today">' +
                 '<span class="td-date-icon">●</span><span>Today</span>' +
                 '<span class="td-date-hint td-date-hint-today"></span>' +
@@ -634,39 +656,34 @@ define(function (require, exports, module) {
                 '<span class="td-date-icon">●</span><span>Next week</span>' +
                 '<span class="td-date-hint td-date-hint-nextweek"></span>' +
             '</button>' +
-            '<div class="td-date-divider"></div>' +
             '<button type="button" class="td-date-option td-date-clear" data-preset="clear">' +
                 '<span class="td-date-icon">×</span><span>No date</span>' +
             '</button>' +
             '<div class="td-date-divider"></div>' +
+            // Reminder + repeat as compact pill rows: same data-* attributes and handlers as before.
             '<div class="td-date-section-label">Remind me</div>' +
-            REMIND_TIMES.map(function (r) {
-                return '<button type="button" class="td-date-option" data-remind="' + r.id + '">' +
-                    '<span class="td-date-icon">◷</span><span>' + r.label + '</span>' +
-                    '<span class="td-opt-check">✓</span>' +
-                '</button>';
-            }).join("") +
-            '<div class="td-date-custom">' +
-                '<span class="td-date-icon">◷</span>' +
-                '<input type="time" class="td-time-input" step="300" aria-label="Custom reminder time"/>' +
-                '<button type="button" class="td-time-set">Set</button>' +
+            '<div class="td-pill-row">' +
+                REMIND_TIMES.map(function (r) {
+                    return '<button type="button" class="td-date-option td-pill" data-remind="' + r.id + '">' +
+                        r.label.replace(":00", "") +
+                    '</button>';
+                }).join("") +
+                '<button type="button" class="td-date-option td-pill td-pill-quiet" data-remind="clear" title="No reminder">Off</button>' +
             '</div>' +
-            '<button type="button" class="td-date-option td-date-clear" data-remind="clear">' +
-                '<span class="td-date-icon">×</span><span>No reminder</span>' +
-                '<span class="td-opt-check">✓</span>' +
-            '</button>' +
+            '<div class="td-date-custom">' +
+                '<input type="time" class="td-time-input" step="300" aria-label="Custom reminder time"/>' +
+                '<button type="button" class="td-time-set">Set time</button>' +
+            '</div>' +
             '<div class="td-date-divider"></div>' +
             '<div class="td-date-section-label">Repeat</div>' +
-            REPEAT_OPTIONS.map(function (o) {
-                return '<button type="button" class="td-date-option" data-repeat="' + o.id + '">' +
-                    '<span class="td-date-icon">↻</span><span>' + o.label + '</span>' +
-                    '<span class="td-opt-check">✓</span>' +
-                '</button>';
-            }).join("") +
-            '<button type="button" class="td-date-option td-date-clear" data-repeat="never">' +
-                '<span class="td-date-icon">×</span><span>Never</span>' +
-                '<span class="td-opt-check">✓</span>' +
-            '</button>' +
+            '<div class="td-pill-row">' +
+                REPEAT_OPTIONS.map(function (o) {
+                    return '<button type="button" class="td-date-option td-pill" data-repeat="' + o.id + '">' +
+                        o.label +
+                    '</button>';
+                }).join("") +
+                '<button type="button" class="td-date-option td-pill td-pill-quiet" data-repeat="never" title="Don\'t repeat">Off</button>' +
+            '</div>' +
         '</div>'
     ).appendTo("body");
 
@@ -728,6 +745,12 @@ define(function (require, exports, module) {
             '<path d="M10.5 2.5 v2"/>' +
         '</svg>';
 
+    const SUBTASK_ICON_SVG =
+        '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" ' +
+            'fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+            '<path d="M3 3 v5 a2 2 0 0 0 2 2 h3"/>' +
+            '<path d="M11 8 v4"/><path d="M9 10 h4"/>' +
+        '</svg>';
     const CLOCK_ICON_SVG =
         '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" ' +
             'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
@@ -835,12 +858,12 @@ define(function (require, exports, module) {
             if (m.index > last) {
                 $container.append(document.createTextNode(text.substring(last, m.index)));
             }
-            const hue = tagHue(m[1]);
-            $container.append(
-                $('<span class="td-tag-inline"></span>')
-                    .text("#" + m[1])
-                    .css("--tag-hue", hue)
-            );
+            // jQuery 2's .css() silently drops custom properties, which left every tag uncolored.
+            const tagEl = document.createElement("span");
+            tagEl.className = "td-tag-inline";
+            tagEl.textContent = "#" + m[1];
+            tagEl.style.setProperty("--tag-hue", String(tagHue(m[1])));
+            $container.append(tagEl);
             last = re.lastIndex;
         }
         if (last < text.length) {
@@ -866,9 +889,9 @@ define(function (require, exports, module) {
     // -------- Render: due chip --------
     function buildDueChip(dueAt) {
         if (!dueAt) {
-            // No date set → small "+ date" affordance (visible on hover via CSS)
+            // No date set → "schedule" affordance in the hover actions
             return $(
-                '<button type="button" class="td-due-add" title="Set due date">' +
+                '<button type="button" class="td-due-add td-action-btn" title="Schedule: date, reminder, repeat" aria-label="Schedule">' +
                     CAL_ICON_SVG +
                 '</button>'
             );
@@ -981,61 +1004,58 @@ define(function (require, exports, module) {
                 (readyHint ? " td-ready" : "") +
                 '" data-id="' + task.id + '" tabindex="0">' +
                 '<div class="td-item-row">' +
-                    '' + // priority placeholder
                     CHECKBOX_SVG +
                     '<div class="td-task-content">' +
                         '<div class="td-text-row">' +
                             '<span class="td-text"></span>' +
                         '</div>' +
                     '</div>' +
-                    '' + // trash placeholder
+                    '<div class="td-row-actions"></div>' +
                 '</div>' +
             '</li>'
         );
+        const $row     = $li.find(".td-item-row");
+        const $content = $li.find(".td-task-content");
+        const $actions = $li.find(".td-row-actions");
 
-        // Insert priority dot at the start of the item-row
-        const $row = $li.find(".td-item-row");
         $row.prepend(buildPriorityDot(task.priority));
+        appendTextWithTags($li.find(".td-text"), task.text);
 
-        // Render task text with inline tags
-        const $text = $li.find(".td-text");
-        appendTextWithTags($text, task.text);
-
-        // Due chip / "+date" affordance — append to the text row
-        const $textRow = $li.find(".td-text-row");
-        $textRow.append(buildDueChip(task.dueAt));
-        if (task.remindAt) { $textRow.append(buildRemindChip(task.remindAt)); }
-        if (task.repeat)   { $textRow.append(buildRepeatChip(task.repeat, task.timesCompleted)); }
-
-        // Code link (if any)
+        // Title gets the full width; everything about *when* and *where* sits on one quiet line below,
+        // so chips never squeeze the title onto two lines.
+        const $meta = $('<div class="td-meta"></div>');
+        if (task.dueAt)    { $meta.append(buildDueChip(task.dueAt)); }
+        if (task.remindAt) { $meta.append(buildRemindChip(task.remindAt)); }
+        if (task.repeat)   { $meta.append(buildRepeatChip(task.repeat, task.timesCompleted)); }
         if (task.codeLink && task.codeLink.file) {
-            $li.find(".td-task-content").append(buildCodeLinkChip(
-                task.codeLink.file, task.codeLink.line
-            ));
+            $meta.append(buildCodeLinkChip(task.codeLink.file, task.codeLink.line));
         }
+        if ($meta.children().length) { $content.append($meta); }
 
-        // Subtasks block:
-        //   - has subtasks       → full section (toggle + list + input)
-        //   - none, but expanded → just the input (user clicked "+ Subtask")
-        //   - none, not expanded → hover-revealed "+ Subtask" hint
+        // Subtasks: full section when there are some, a bare input right after "+ subtask" is clicked.
         if (task.subtasks.length > 0) {
-            $li.find(".td-task-content").append(buildSubtasksSection(task));
+            $content.append(buildSubtasksSection(task));
         } else if (isExpanded(task.id)) {
-            $li.find(".td-task-content").append(
+            $content.append(
                 '<div class="td-subtasks-section td-subtasks-empty">' +
                     '<input type="text" class="td-subtask-input" ' +
-                        'placeholder="Add subtask..." maxlength="200"/>' +
+                        'placeholder="Add subtask…" maxlength="200"/>' +
                 '</div>'
-            );
-        } else {
-            $li.find(".td-task-content").append(
-                '<button type="button" class="td-add-subtask-hint" title="Add subtask">' +
-                    '+ Subtask</button>'
             );
         }
 
-        // Trash on the far right
-        $row.append(TRASH_SVG);
+        // Hover actions float over the row's right edge instead of reserving invisible space.
+        if (!task.dueAt) {
+            $actions.append(buildDueChip(null));
+        }
+        if (!task.subtasks.length && !isExpanded(task.id)) {
+            $actions.append(
+                '<button type="button" class="td-add-subtask-hint td-action-btn" title="Add subtask" aria-label="Add subtask">' +
+                    SUBTASK_ICON_SVG +
+                '</button>'
+            );
+        }
+        $actions.append(TRASH_SVG);
 
         return $li;
     }
@@ -1153,6 +1173,7 @@ define(function (require, exports, module) {
             .toggleClass("td-menu-selected", !!store.codeTodosEnabled);
         $panel.find('[data-action="toggle-stats"]')
             .toggleClass("td-menu-selected", !!store.statsVisible);
+        $panel.find(".td-stats-btn").toggleClass("td-icon-btn-active", !!store.statsVisible);
 
         renderStats();
 
@@ -1214,14 +1235,15 @@ define(function (require, exports, module) {
     function renderInputHint() {
         const parsed = parseQuickAdd($input.val());
         if (!parsed.matched) { $inputHint.hide().empty(); return; }
-        const parts = [];
-        if (parsed.dueAt)    { parts.push(formatDueDate(parsed.dueAt).label); }
-        if (parsed.remindAt) { parts.push(formatTime(parsed.remindAt)); }
-        if (parsed.repeat)   { parts.push("↻ " + repeatLabel(parsed.repeat)); }
-        $inputHint.empty()
-            .append($('<span class="td-input-hint-arrow">→</span>'))
-            .append($('<span class="td-input-hint-text"></span>').text(parts.join(" · ")))
-            .show();
+        $inputHint.empty().append($('<span class="td-input-hint-label">Will schedule</span>'));
+        const pill = function (iconHtml, label) {
+            return $('<span class="td-hint-pill"></span>').html(iconHtml)
+                .append($("<span></span>").text(label));
+        };
+        if (parsed.dueAt)    { $inputHint.append(pill(CAL_ICON_SVG, formatDueDate(parsed.dueAt).label)); }
+        if (parsed.remindAt) { $inputHint.append(pill(CLOCK_ICON_SVG, formatTime(parsed.remindAt))); }
+        if (parsed.repeat)   { $inputHint.append(pill('<span class="td-repeat-icon">↻</span>', repeatLabel(parsed.repeat))); }
+        $inputHint.show();
     }
 
     // -------- Completion log (stats) --------
@@ -1527,8 +1549,13 @@ define(function (require, exports, module) {
         return currentTasks().filter(function (t) { return t.id === id; })[0] || null;
     }
     function refreshPopoverSelection(task) {
-        $datePopover.find("[data-remind], [data-repeat]").removeClass("td-opt-selected");
+        $datePopover.find("[data-preset], [data-remind], [data-repeat]").removeClass("td-opt-selected");
         if (!task) { return; }
+        ["today", "tomorrow", "weekend", "nextweek"].forEach(function (p) {
+            if (task.dueAt && presetToTs(p) === task.dueAt) {
+                $datePopover.find('[data-preset="' + p + '"]').addClass("td-opt-selected");
+            }
+        });
         // A snoozed reminder sits on an arbitrary minute and matches no preset — nothing ticks.
         const remindId = remindIdFor(task.remindAt);
         if (remindId) {
@@ -1904,6 +1931,15 @@ define(function (require, exports, module) {
         saveStore();
         $fromCodeSec.toggleClass("td-collapsed", !store.fromCodeExpanded);
     });
+
+    $panel.find(".td-stats-btn").on("click", function () {
+        store.statsVisible = !store.statsVisible;
+        saveStore();
+        renderList();
+    });
+    $panel.find(".td-shortcut-kbd").text(
+        brackets.platform === "mac" ? "⌘⌥T" : TOGGLE_SHORTCUT.replace(/-/g, "+")
+    );
 
     // Overflow menu
     $menuBtn.on("click", function (e) {
