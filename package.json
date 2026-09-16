@@ -2,7 +2,7 @@
     "title": "todu",
     "name": "github-electrofist-toduextension",
     "description": "A Notion-style to-do dropdown for Phoenix Code. Per-project tasks, due dates, reminders, recurring tasks, priority, tags, subtasks, and an auto-scanner that surfaces TODO/FIXME comments in your code.",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "license": "MIT",
     "author": "Krrish (https://github.com/Electrofist)",
     "homepage": "https://github.com/Electrofist/ToduExtension",

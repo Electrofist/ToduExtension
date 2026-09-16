@@ -21,6 +21,8 @@ Everything else — due dates, priority, tags, subtasks — is the polish on top
 
 ### Tasks
 - **Add tasks fast** with the input + `+` (or Enter)
+- **Quick-add dates, times and repeats** — end a task with `tomorrow 3pm`, `on friday`, `tonight`, `next week`, `every weekday 9am`… and they're pulled off the title into a due date, reminder and repeat. A live preview under the input shows what was understood. Only the *end* of the title is read, so "Write daily report" stays a plain task.
+- **Double-click to edit** a task's text in place (or `F2` when a row is focused) — Enter saves, Esc cancels
 - **Click to complete** with a smooth strike-through
 - **Inline `#tags`** — type `Fix login #bug #urgent` and tags are auto-extracted and color-coded
 - **Priority dot** on the left of each row — click to cycle (none → high → medium → low)
@@ -28,7 +30,7 @@ Everything else — due dates, priority, tags, subtasks — is the polish on top
 - **Subtasks** with collapsible progress (e.g. "2/4"). When all subtasks are done, the parent gets a subtle "ready to complete" glow — without auto-checking, so you stay in control.
 
 ### Reminders & recurring
-- **Reminders** at 9:00 AM / 12:00 PM / 6:00 PM on a task's due date — a clock chip shows the time, and turns amber once it's passed
+- **Reminders** at 9:00 AM / 12:00 PM / 6:00 PM, or **any custom time**, on a task's due date — a clock chip shows the time, and turns amber once it's passed
 - **A reminder that came due while Phoenix was closed still fires** the next time you open it, so shutting the editor never silently eats one
 - **Actionable toast** — Open (jumps to the task), Snooze 10m, or Mark done, right from the notification
 - **Several at once collapse into a digest** ("4 reminders due") instead of burying you in a stack of toasts
@@ -47,8 +49,11 @@ Everything else — due dates, priority, tags, subtasks — is the polish on top
 - **Completed section** that collapses out of the way
 - **Sort by** date added / alphabetical / due date / priority
 - **Clear completed** in one click
+- **Stats** — done today, last 7 days, your day streak and a 7-day bar chart, across all projects. Repeating tasks show how many times you've done them right on their repeat chip (`↻ Daily | 12×`)
 
 ### Polish
+- **Keyboard shortcut** — `Ctrl+Alt+T` (`Cmd+Option+T` on macOS) opens and closes the list
+- **Status bar count** — "3 due" for this project + Global, turning red when something's overdue; click it to open the list. Hidden when nothing's due.
 - **Light + dark theme** awareness — auto-matches your Phoenix theme
 - **Soft Notion-style visuals** — airy spacing, subtle shadows, rounded corners
 - **Overdue badge** on the toolbar icon — quiet by default, appears only when something needs attention
@@ -75,12 +80,15 @@ The checked-box icon will appear in the right-side toolbar. Click it to open the
 
 | Action | How |
 |---|---|
+| **Open / close the list** | `Ctrl+Alt+T` (`Cmd+Option+T` on macOS), the toolbar icon, or the status bar count |
 | **Add a task** | Type in the input + press Enter or click + |
+| **Add with a date / time / repeat** | End the text with it: `Call mom tomorrow 5pm`, `Standup every weekday 9:30am` |
+| **Edit a task** | Double-click its text (or `F2` on a focused row) → Enter to save, Esc to cancel |
 | **Add a `#tag`** | Type `#tag` anywhere in the task text — auto-styled |
 | **Mark done** | Click the checkbox or anywhere on the row |
 | **Set priority** | Click the small dot on the left to cycle |
 | **Set due date** | Click the calendar icon → pick a preset |
-| **Set a reminder** | Click the calendar icon → **Remind me** → pick a time |
+| **Set a reminder** | Click the calendar icon → **Remind me** → pick a preset, or type any time and press **Set** |
 | **Repeat a task** | Click the calendar icon → **Repeat** → Daily / Weekdays / Weekly / Monthly |
 | **Snooze a reminder** | **Snooze 10m** on the reminder toast |
 | **Add a subtask** | Hover a task → "+ Subtask" → type, press Enter |
@@ -90,6 +98,7 @@ The checked-box icon will appear in the right-side toolbar. Click it to open the
 | **Switch projects** | The "This project" tab auto-swaps when you switch project folders |
 | **Sort / clear completed** | The `⋯` menu in the panel header |
 | **Toggle the code scanner** | `⋯` menu → "Scan code for TODOs" |
+| **Show stats** | `⋯` menu → "Show stats" |
 
 ---
 
@@ -103,11 +112,10 @@ All tasks are saved to Phoenix's preferences system. Project tasks are keyed by 
 
 Possible additions, not promises:
 
-- **Edit tasks in place** (double-click)
 - **Drag to reorder**
 - **Import / export** JSON
-- **Completion stats** ("12 done this week")
-- **Custom reminder times** (any hour, not just the three presets)
+- **Filter by tag** (click a `#tag`)
+- **Promote a code TODO** into a full task with a date and reminder
 
 Open an issue if any of these would matter to your workflow — it helps me prioritize.
 

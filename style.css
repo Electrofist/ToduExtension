@@ -942,3 +942,152 @@
     100% { background: transparent; }
 }
 .td-item.td-rolled { animation: tdRolled 1.1s ease-out; }
+
+/* -------- Quick-add preview -------- */
+
+.td-input-hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    background: var(--td-accent-soft);
+    color: var(--td-accent);
+    border-bottom: 1px solid var(--td-divider);
+    font-size: 11.5px;
+    font-weight: 500;
+    animation: tdFadeIn 120ms ease-out both;
+}
+.td-input-hint-arrow { opacity: 0.7; }
+
+/* -------- Edit in place -------- */
+
+.td-edit-input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 24px;
+    margin: -2px 0;
+    padding: 2px 6px;
+    background: var(--td-bg-input-focus);
+    color: var(--td-text);
+    border: 1px solid var(--td-accent);
+    border-radius: 4px;
+    box-shadow: 0 0 0 3px var(--td-accent-soft);
+    font: inherit;
+    outline: none;
+}
+.td-item.td-editing .td-text { flex: 1; }
+.td-item.td-editing .td-text-row > :not(.td-text) { display: none; }
+
+/* -------- Custom reminder time -------- */
+
+.td-date-custom {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 10px;
+    border-radius: 4px;
+}
+.td-time-input {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    padding: 2px 6px;
+    background: var(--td-bg-input);
+    color: var(--td-text);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font: inherit;
+    font-size: 12.5px;
+    color-scheme: light dark;
+    outline: none;
+}
+.td-time-input:focus { border-color: var(--td-accent); background: var(--td-bg-input-focus); }
+.td-time-set {
+    height: 26px;
+    padding: 0 10px;
+    background: var(--td-accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.td-time-set:hover { background: color-mix(in srgb, var(--td-accent) 88%, black); }
+.td-date-custom.td-opt-selected .td-time-input { border-color: var(--td-accent); }
+
+.td-repeat-count {
+    margin-left: 2px;
+    padding-left: 5px;
+    border-left: 1px solid var(--td-divider);
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+}
+
+/* -------- Stats card -------- */
+
+.td-stats {
+    margin: 6px 12px 8px;
+    padding: 10px 12px 8px;
+    background: var(--td-bg-header);
+    border: 1px solid var(--td-divider);
+    border-radius: 8px;
+    animation: tdFadeIn 140ms ease-out both;
+}
+.td-stats-nums {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+.td-stat { display: flex; flex-direction: column; min-width: 0; }
+.td-stat-val {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--td-text);
+    font-variant-numeric: tabular-nums;
+}
+.td-stat-lbl {
+    font-size: 10.5px;
+    color: var(--td-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+.td-stats-bars {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+}
+.td-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.td-bar-track {
+    width: 100%;
+    height: 34px;
+    display: flex;
+    align-items: flex-end;
+}
+.td-bar {
+    width: 100%;
+    min-height: 3px;
+    background: var(--td-accent);
+    border-radius: 3px 3px 1px 1px;
+    opacity: 0.55;
+    transition: height 0.2s ease;
+}
+.td-bar.td-bar-today { opacity: 1; }
+.td-bar.td-bar-empty { background: var(--td-divider); opacity: 1; }
+.td-bar-lbl { font-size: 10px; color: var(--td-text-muted); }
+
+/* -------- Status bar count --------
+   Lives in Phoenix's status bar, outside #td-dropdown, so it inherits the status bar's colors. */
+
+.td-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+}
+.td-status svg { flex: 0 0 12px; opacity: 0.85; }
+.td-status:hover { opacity: 0.85; }
+.td-status.td-status-overdue { color: #e5534b; }

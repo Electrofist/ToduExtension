@@ -16,6 +16,8 @@ define(function (require, exports, module) {
           FileSystem         = brackets.getModule("filesystem/FileSystem"),
           CommandManager     = brackets.getModule("command/CommandManager"),
           Commands           = brackets.getModule("command/Commands"),
+          KeyBindingManager  = brackets.getModule("command/KeyBindingManager"),
+          StatusBar          = brackets.getModule("widgets/StatusBar"),
           Menus              = brackets.getModule("command/Menus");
 
     // Optional: older Phoenix/Brackets builds may not ship NotificationUI. Reminders degrade to a
@@ -68,6 +70,25 @@ define(function (require, exports, module) {
     const MAX_ROLL_STEPS   = 2000;
     // How many task titles a digest toast names before it says "+N more".
     const DIGEST_LIST_CAP  = 3;
+
+    // Ctrl maps to Cmd on macOS. Ctrl-Shift-T is taken by "Reopen closed file".
+    const TOGGLE_SHORTCUT = "Ctrl-Alt-T";
+
+    // Completion history powering the stats card. Bounded both ways so prefs never grow unbounded.
+    const STATS_LOG_CAP        = 2000;
+    const STATS_RETENTION_DAYS = 120;
+
+    const STATUS_INDICATOR_ID = "status-todu";
+
+    // Words the quick-add parser understands at the END of a task ("Ship it friday 3pm daily").
+    const DAY_WORDS = {
+        sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2,
+        wed: 3, weds: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4,
+        fri: 5, friday: 5, sat: 6, saturday: 6
+    };
+    const REPEAT_WORDS    = { daily: "daily", weekdays: "weekdays", weekly: "weekly", monthly: "monthly" };
+    const EVERY_WORDS     = { day: "daily", weekday: "weekdays", week: "weekly", month: "monthly" };
+    const CONNECTOR_WORDS = ["at", "on", "by", "due"];
     // Curated tag hues distributed around the wheel so adjacent tags don't collide.
     const TAG_HUES = [355, 25, 45, 130, 175, 210, 260, 305];
 
@@ -103,6 +124,8 @@ define(function (require, exports, module) {
         if (!s.projects                || typeof s.projects               !== "object") { s.projects = {}; }
         if (!s.dismissedCodeTodos      || typeof s.dismissedCodeTodos     !== "object") { s.dismissedCodeTodos = {}; }
         if (!s.expandedSubtasks        || typeof s.expandedSubtasks       !== "object") { s.expandedSubtasks = {}; }
+        if (!Array.isArray(s.completionLog)) { s.completionLog = []; }
+        if (typeof s.statsVisible !== "boolean") { s.statsVisible = false; }
         // Normalize every existing task so new fields are present
         Object.keys(s.projects).forEach(function (k) {
             s.projects[k] = (s.projects[k] || []).map(normalizeTask);
@@ -298,6 +321,156 @@ define(function (require, exports, module) {
         }
         return next;
     }
+    // Calendar-day arithmetic via Date, so a day is never 23 or 25 hours across DST.
+    function addDays(ts, n) {
+        const d = new Date(ts);
+        d.setDate(d.getDate() + n);
+        return d.getTime();
+    }
+
+    // -------- Quick-add parsing --------
+    function parseClockToken(tok) {
+        let m = tok.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)$/);
+        if (m) {
+            let hour = Number(m[1]);
+            const minute = m[2] ? Number(m[2]) : 0;
+            if (hour < 1 || hour > 12 || minute > 59) { return null; }
+            if (m[3] === "pm" && hour !== 12) { hour += 12; }
+            if (m[3] === "am" && hour === 12) { hour = 0; }
+            return { hour: hour, minute: minute };
+        }
+        m = tok.match(/^(\d{1,2}):(\d{2})$/);
+        if (m) {
+            const hour = Number(m[1]), minute = Number(m[2]);
+            if (hour > 23 || minute > 59) { return null; }
+            return { hour: hour, minute: minute };
+        }
+        return null;
+    }
+    /**
+     * Pulls a due date, reminder time and repeat rule off the END of a task title:
+     *   "Fix login tomorrow 3pm #bug" -> "Fix login #bug", due tomorrow, remind 15:00.
+     * Only trailing words are read, and parsing stops at the first word it doesn't recognise, so a
+     * title like "Write daily report" is left alone. #tags may sit anywhere in the trailing run.
+     */
+    function parseQuickAdd(raw, now) {
+        now = now || Date.now();
+        const text  = (raw || "").trim();
+        const plain = { text: text, dueAt: null, remindAt: null, repeat: null, matched: false };
+        if (!text) { return plain; }
+
+        const words = text.split(/\s+/);
+        const found = { day: null, clock: null, repeat: null };
+        const keptTags = [];
+        let i = words.length - 1;
+        while (i >= 0) {
+            const w    = words[i];
+            const lw   = w.toLowerCase().replace(/[.,;!?]+$/, "");
+            const prev = i > 0 ? words[i - 1].toLowerCase() : "";
+
+            if (/^#[a-zA-Z]/.test(w)) { keptTags.unshift(w); i--; continue; }
+
+            // Two-word forms
+            if (!found.repeat && EVERY_WORDS[lw] && prev === "every") {
+                found.repeat = EVERY_WORDS[lw]; i -= 2; continue;
+            }
+            if (!found.day && lw === "week" && prev === "next") {
+                found.day = { kind: "nextweek" }; i -= 2; continue;
+            }
+            if (!found.clock && (lw === "am" || lw === "pm") && /^\d{1,2}(:\d{2})?$/.test(prev)) {
+                const c2 = parseClockToken(prev + lw);
+                if (c2) { found.clock = c2; i -= 2; continue; }
+            }
+
+            // One-word forms
+            if (!found.repeat && REPEAT_WORDS[lw]) { found.repeat = REPEAT_WORDS[lw]; i--; continue; }
+            if (!found.clock) {
+                const c = parseClockToken(lw);
+                if (c) { found.clock = c; i--; continue; }
+            }
+            if (!found.day) {
+                if (lw === "today") { found.day = { kind: "today" }; i--; continue; }
+                if (lw === "tonight") {
+                    found.day = { kind: "today" };
+                    if (!found.clock) { found.clock = { hour: 18, minute: 0 }; }
+                    i--; continue;
+                }
+                if (lw === "tomorrow" || lw === "tmrw" || lw === "tmr") {
+                    found.day = { kind: "tomorrow" }; i--; continue;
+                }
+                if (Object.prototype.hasOwnProperty.call(DAY_WORDS, lw)) {
+                    found.day = { kind: "weekday", dow: DAY_WORDS[lw] }; i--; continue;
+                }
+            }
+            // "at 3pm", "on friday" — a connector only goes when it introduces something parsed.
+            if (CONNECTOR_WORDS.indexOf(lw) !== -1 && (found.day || found.clock)) { i--; continue; }
+            break;
+        }
+
+        if (!found.day && !found.clock && !found.repeat) { return plain; }
+        const title = words.slice(0, i + 1).concat(keptTags).join(" ");
+        // Never eat the whole title: "Tomorrow" on its own is a task called Tomorrow.
+        if (!words.slice(0, i + 1).join(" ").trim()) { return plain; }
+
+        const today = startOfDay(now);
+        let dueAt = null;
+        if (found.day) {
+            if (found.day.kind === "today")    { dueAt = today; }
+            if (found.day.kind === "tomorrow") { dueAt = addDays(today, 1); }
+            if (found.day.kind === "nextweek") {
+                const delta = ((1 - new Date(today).getDay() + 7) % 7) || 7;
+                dueAt = addDays(today, delta);
+            }
+            if (found.day.kind === "weekday") {
+                dueAt = addDays(today, (found.day.dow - new Date(today).getDay() + 7) % 7);
+            }
+        }
+        if (dueAt === null && found.clock) {
+            // A bare time means the next time the clock reads that.
+            dueAt = atTimeOnDate(today, found.clock.hour, found.clock.minute) <= now ? addDays(today, 1) : today;
+        }
+        if (dueAt === null && found.repeat) {
+            dueAt = today;
+            if (found.repeat === "weekdays") {
+                while (new Date(dueAt).getDay() === 0 || new Date(dueAt).getDay() === 6) { dueAt = addDays(dueAt, 1); }
+            }
+        }
+        return {
+            text: title,
+            dueAt: dueAt,
+            remindAt: found.clock ? atTimeOnDate(dueAt, found.clock.hour, found.clock.minute) : null,
+            repeat: found.repeat,
+            matched: true
+        };
+    }
+
+    // -------- Stats --------
+    function dayKey(ts) {
+        const d = new Date(ts);
+        return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
+    }
+    function computeStats(log, now) {
+        const counts = Object.create(null);
+        (log || []).forEach(function (e) {
+            const k = dayKey(e.at);
+            counts[k] = (counts[k] || 0) + 1;
+        });
+        const today = startOfDay(now || Date.now());
+        const days = [];
+        for (let n = 6; n >= 0; n--) {
+            const ts = addDays(today, -n);
+            days.push({ ts: ts, count: counts[dayKey(ts)] || 0 });
+        }
+        const week = days.reduce(function (sum, d) { return sum + d.count; }, 0);
+        // A streak survives until the end of today: nothing done yet today still counts yesterday's run.
+        let streak = 0;
+        let cursor = counts[dayKey(today)] ? today : addDays(today, -1);
+        while (counts[dayKey(cursor)] && streak < STATS_RETENTION_DAYS) {
+            streak++;
+            cursor = addDays(cursor, -1);
+        }
+        return { today: days[6].count, week: week, streak: streak, days: days };
+    }
 
     // -------- Theme --------
     function detectTheme() {
@@ -360,7 +533,19 @@ define(function (require, exports, module) {
                     '</svg>' +
                 '</button>' +
             '</div>' +
+            '<div class="td-input-hint" style="display:none;"></div>' +
             '<div class="td-body">' +
+                '<div class="td-stats" style="display:none;">' +
+                    '<div class="td-stats-nums">' +
+                        '<div class="td-stat"><span class="td-stat-val td-stat-today">0</span>' +
+                            '<span class="td-stat-lbl">Done today</span></div>' +
+                        '<div class="td-stat"><span class="td-stat-val td-stat-week">0</span>' +
+                            '<span class="td-stat-lbl">Last 7 days</span></div>' +
+                        '<div class="td-stat"><span class="td-stat-val td-stat-streak">0</span>' +
+                            '<span class="td-stat-lbl">Day streak</span></div>' +
+                    '</div>' +
+                    '<div class="td-stats-bars"></div>' +
+                '</div>' +
                 '<ul class="td-list td-pending-list"></ul>' +
                 '<div class="td-completed-section" style="display:none;">' +
                     '<button type="button" class="td-section-toggle td-completed-toggle">' +
@@ -403,6 +588,9 @@ define(function (require, exports, module) {
                     'Clear completed' +
                 '</button>' +
                 '<div class="td-menu-divider"></div>' +
+                '<button type="button" class="td-menu-item" data-action="toggle-stats">' +
+                    '<span class="td-menu-check">✓</span><span>Show stats</span>' +
+                '</button>' +
                 '<button type="button" class="td-menu-item" data-action="toggle-code-scan">' +
                     '<span class="td-menu-check">✓</span><span>Scan code for TODOs</span>' +
                 '</button>' +
@@ -458,6 +646,11 @@ define(function (require, exports, module) {
                     '<span class="td-opt-check">✓</span>' +
                 '</button>';
             }).join("") +
+            '<div class="td-date-custom">' +
+                '<span class="td-date-icon">◷</span>' +
+                '<input type="time" class="td-time-input" step="300" aria-label="Custom reminder time"/>' +
+                '<button type="button" class="td-time-set">Set</button>' +
+            '</div>' +
             '<button type="button" class="td-date-option td-date-clear" data-remind="clear">' +
                 '<span class="td-date-icon">×</span><span>No reminder</span>' +
                 '<span class="td-opt-check">✓</span>' +
@@ -495,6 +688,9 @@ define(function (require, exports, module) {
     const $fromCodeTog    = $panel.find(".td-from-code-toggle");
     const $fromCodeStatus = $panel.find(".td-from-code-status");
     const $empty          = $panel.find(".td-empty");
+    const $inputHint      = $panel.find(".td-input-hint");
+    const $stats          = $panel.find(".td-stats");
+    const $statsBars      = $panel.find(".td-stats-bars");
 
     // -------- SVG snippets --------
     const CHECKBOX_SVG =
@@ -701,7 +897,7 @@ define(function (require, exports, module) {
         $chip.find(".td-remind-label").text(formatTime(remindAt));
         return $chip;
     }
-    function buildRepeatChip(repeat) {
+    function buildRepeatChip(repeat, timesCompleted) {
         const $chip = $(
             '<button type="button" class="td-repeat-chip" title="Change repeat">' +
                 '<span class="td-repeat-icon">↻</span>' +
@@ -709,6 +905,11 @@ define(function (require, exports, module) {
             '</button>'
         );
         $chip.find(".td-repeat-label").text(repeatLabel(repeat) || "");
+        if (timesCompleted > 0) {
+            $('<span class="td-repeat-count"></span>').text(timesCompleted + "×").appendTo($chip);
+            $chip.attr("title", "Done " + timesCompleted + (timesCompleted === 1 ? " time" : " times") +
+                " — click to change repeat");
+        }
         return $chip;
     }
 
@@ -804,7 +1005,7 @@ define(function (require, exports, module) {
         const $textRow = $li.find(".td-text-row");
         $textRow.append(buildDueChip(task.dueAt));
         if (task.remindAt) { $textRow.append(buildRemindChip(task.remindAt)); }
-        if (task.repeat)   { $textRow.append(buildRepeatChip(task.repeat)); }
+        if (task.repeat)   { $textRow.append(buildRepeatChip(task.repeat, task.timesCompleted)); }
 
         // Code link (if any)
         if (task.codeLink && task.codeLink.file) {
@@ -950,6 +1151,10 @@ define(function (require, exports, module) {
             .toggleClass("td-menu-selected", store.sortBy === "priority");
         $panel.find('[data-action="toggle-code-scan"]')
             .toggleClass("td-menu-selected", !!store.codeTodosEnabled);
+        $panel.find('[data-action="toggle-stats"]')
+            .toggleClass("td-menu-selected", !!store.statsVisible);
+
+        renderStats();
 
         updateBadge();
         updateDatePresetHints();
@@ -978,8 +1183,12 @@ define(function (require, exports, module) {
 
     // -------- Mutations --------
     function addTask(rawText, opts) {
-        const text = (rawText || "").trim();
+        let text = (rawText || "").trim();
         if (!text) { return; }
+        // Only typed input is parsed. A captured code line ("Add line to To-Do") stays verbatim —
+        // "return cache.get(key) // daily" must not quietly become a recurring task.
+        const parsed = (opts && opts.parse) ? parseQuickAdd(text) : null;
+        if (parsed && parsed.matched) { text = parsed.text; }
         const newTask = normalizeTask({
             id: Date.now() + Math.floor(Math.random() * 10000),
             text: text,
@@ -987,16 +1196,125 @@ define(function (require, exports, module) {
             createdAt: Date.now(),
             tags: extractTags(text)
         });
+        if (parsed && parsed.matched) {
+            newTask.dueAt    = parsed.dueAt;
+            newTask.remindAt = parsed.remindAt;
+            newTask.repeat   = parsed.repeat;
+        }
         if (opts && opts.codeLink) { newTask.codeLink = opts.codeLink; }
         mutateCurrentTasks(function (list) { list.push(newTask); return list; });
         renderList();
     }
+    function submitInput() {
+        addTask($input.val(), { parse: true });
+        $input.val("");
+        renderInputHint();
+    }
+    // Live preview of what the quick-add parser will pull off the typed text.
+    function renderInputHint() {
+        const parsed = parseQuickAdd($input.val());
+        if (!parsed.matched) { $inputHint.hide().empty(); return; }
+        const parts = [];
+        if (parsed.dueAt)    { parts.push(formatDueDate(parsed.dueAt).label); }
+        if (parsed.remindAt) { parts.push(formatTime(parsed.remindAt)); }
+        if (parsed.repeat)   { parts.push("↻ " + repeatLabel(parsed.repeat)); }
+        $inputHint.empty()
+            .append($('<span class="td-input-hint-arrow">→</span>'))
+            .append($('<span class="td-input-hint-text"></span>').text(parts.join(" · ")))
+            .show();
+    }
+
+    // -------- Completion log (stats) --------
+    function recordCompletion(taskId, outcome) {
+        const log = store.completionLog;
+        if (outcome === "done" || outcome === "rolled") {
+            log.push({ id: taskId, at: Date.now() });
+        } else if (outcome === "reopened") {
+            // Un-checking takes back the most recent completion of that task, so a misclick
+            // doesn't inflate the numbers.
+            for (let i = log.length - 1; i >= 0; i--) {
+                if (log[i].id === taskId) { log.splice(i, 1); break; }
+            }
+        } else {
+            return;
+        }
+        const cutoff = addDays(startOfToday(), -STATS_RETENTION_DAYS);
+        store.completionLog = log
+            .filter(function (e) { return e.at >= cutoff; })
+            .slice(-STATS_LOG_CAP);
+        saveStore();
+    }
+    function renderStats() {
+        $stats.toggle(!!store.statsVisible);
+        if (!store.statsVisible) { return; }
+        const s = computeStats(store.completionLog);
+        $stats.find(".td-stat-today").text(s.today);
+        $stats.find(".td-stat-week").text(s.week);
+        $stats.find(".td-stat-streak").text(s.streak);
+        const max = Math.max.apply(null, s.days.map(function (d) { return d.count; }).concat([1]));
+        $statsBars.empty();
+        s.days.forEach(function (d, idx) {
+            const date = new Date(d.ts);
+            const $col = $('<div class="td-bar-col"></div>').attr("title",
+                date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) +
+                " — " + d.count + " done");
+            const $bar = $('<div class="td-bar"></div>')
+                .css("height", Math.round((d.count / max) * 100) + "%")
+                .toggleClass("td-bar-empty", d.count === 0)
+                .toggleClass("td-bar-today", idx === 6);
+            $('<div class="td-bar-track"></div>').append($bar).appendTo($col);
+            $('<div class="td-bar-lbl"></div>')
+                .text(date.toLocaleDateString(undefined, { weekday: "narrow" }))
+                .appendTo($col);
+            $statsBars.append($col);
+        });
+    }
+
+    // -------- Edit in place --------
+    let editingId = null;
+    let pendingToggle = null;
+
+    function beginEdit(id) {
+        const task = findCurrentTask(id);
+        if (!task) { return; }
+        const $li = $panel.find('.td-item[data-id="' + id + '"]');
+        const $text = $li.find(".td-text").first();
+        if (!$text.length) { return; }
+        editingId = id;
+        const $field = $('<input type="text" class="td-edit-input" maxlength="200"/>').val(task.text);
+        $text.empty().append($field);
+        $li.addClass("td-editing");
+        $field.trigger("focus");
+        const el = $field.get(0);
+        el.setSelectionRange(el.value.length, el.value.length);
+    }
+    function commitEdit(id, value) {
+        if (editingId !== id) { return; } // blur after Enter re-rendered: already handled
+        editingId = null;
+        const text = (value || "").trim();
+        // An emptied field cancels rather than deletes — deleting has its own button.
+        if (text) {
+            mutateCurrentTasks(function (list) {
+                list.forEach(function (t) {
+                    if (t.id === id) { t.text = text; t.tags = extractTags(text); }
+                });
+                return list;
+            });
+        }
+        renderList();
+    }
+    function cancelEdit() {
+        editingId = null;
+        renderList();
+    }
+
     function toggleDone(id) {
         let outcome = null;
         mutateCurrentTasks(function (list) {
             list.forEach(function (t) { if (t.id === id) { outcome = applyCompletion(t); } });
             return list;
         });
+        recordCompletion(id, outcome);
         renderList();
         if (outcome === "rolled") { flashRow(id, "td-rolled"); }
     }
@@ -1069,22 +1387,30 @@ define(function (require, exports, module) {
         renderList();
     }
     function setRemindTime(id, remindId) {
+        if (remindId === "clear") {
+            mutateCurrentTasks(function (list) {
+                list.forEach(function (t) {
+                    if (t.id === id) { t.remindAt = null; t.remindedAt = null; }
+                });
+                return list;
+            });
+            renderList();
+            return;
+        }
+        const spec = REMIND_TIMES.filter(function (r) { return r.id === remindId; })[0];
+        if (spec) { setReminderClock(id, spec.hour, spec.minute); }
+    }
+    // Any hour:minute — used by the presets and the custom time field alike.
+    function setReminderClock(id, hour, minute) {
         mutateCurrentTasks(function (list) {
             list.forEach(function (t) {
                 if (t.id !== id) { return; }
-                if (remindId === "clear") {
-                    t.remindAt = null;
-                    t.remindedAt = null;
-                    return;
-                }
-                const spec = REMIND_TIMES.filter(function (r) { return r.id === remindId; })[0];
-                if (!spec) { return; }
                 // A reminder needs a day to sit on. With no due date set, use today — or tomorrow
                 // if that time already passed, so a new reminder is never born already overdue.
                 const base = t.dueAt || startOfToday();
-                let when = atTimeOnDate(base, spec.hour, spec.minute);
+                let when = atTimeOnDate(base, hour, minute);
                 if (!t.dueAt && when <= Date.now()) {
-                    when = atTimeOnDate(base + 86400000, spec.hour, spec.minute);
+                    when = atTimeOnDate(addDays(base, 1), hour, minute);
                 }
                 t.remindAt = when;
                 t.remindedAt = null;
@@ -1210,7 +1536,31 @@ define(function (require, exports, module) {
         }
         $datePopover.find('[data-repeat="' + (task.repeat || "never") + '"]')
             .addClass("td-opt-selected");
+        // Custom field shows the reminder's actual time, and lights up when no preset matches it.
+        const $time = $datePopover.find(".td-time-input");
+        if (task.remindAt) {
+            const d = new Date(task.remindAt);
+            $time.val(String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"));
+        } else {
+            $time.val("");
+        }
+        $datePopover.find(".td-date-custom").toggleClass("td-opt-selected", !!task.remindAt && !remindId);
     }
+    function applyCustomTime() {
+        if (!datePopoverTaskId) { return; }
+        const m = /^(\d{2}):(\d{2})/.exec($datePopover.find(".td-time-input").val() || "");
+        if (!m) { return; }
+        const taskId = datePopoverTaskId;
+        setReminderClock(taskId, Number(m[1]), Number(m[2]));
+        refreshPopoverSelection(findCurrentTask(taskId));
+    }
+    $datePopover.on("click", ".td-time-set", function (e) {
+        e.stopPropagation();
+        applyCustomTime();
+    });
+    $datePopover.on("keydown", ".td-time-input", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); applyCustomTime(); }
+    });
     function openDatePopover(forTaskId, $anchor) {
         datePopoverTaskId = forTaskId;
         updateDatePresetHints();
@@ -1298,7 +1648,9 @@ define(function (require, exports, module) {
         renderList();
     }
     function completeFromToast(entry) {
-        mutateTaskInScope(entry.scope, entry.task.id, function (t) { applyCompletion(t); });
+        let outcome = null;
+        mutateTaskInScope(entry.scope, entry.task.id, function (t) { outcome = applyCompletion(t); });
+        recordCompletion(entry.task.id, outcome);
         renderList();
     }
     function toastAction(label, primary) {
@@ -1367,23 +1719,26 @@ define(function (require, exports, module) {
         saveStore();
         if (due.length === 1) { showReminderToast(due[0]); }
         else                  { showDigestToast(due); }
-        if ($panel.is(":visible")) { renderList(); }
-        else                       { updateBadge(); }
+        // Don't re-render out from under someone mid-edit; the badge still updates.
+        if ($panel.is(":visible") && editingId === null) { renderList(); }
+        else                                             { updateBadge(); }
     }
     function startReminderLoop() {
         if (reminderTimer) { clearInterval(reminderTimer); }
         tickReminders();
-        reminderTimer = setInterval(tickReminders, REMINDER_TICK_MS);
+        // updateBadge on every tick also rolls the status bar count over at midnight.
+        reminderTimer = setInterval(function () { tickReminders(); updateBadge(); }, REMINDER_TICK_MS);
     }
 
     // -------- Event wiring --------
-    $addBtn.on("click", function () { addTask($input.val()); $input.val(""); });
+    $addBtn.on("click", submitInput);
     $input.on("keydown", function (e) {
         if (e.key === "Enter" || e.keyCode === 13) {
             e.preventDefault();
-            addTask($input.val()); $input.val("");
+            submitInput();
         }
     });
+    $input.on("input", renderInputHint);
 
     $tabs.on("click", ".td-tab", function () { setActiveTab($(this).attr("data-tab")); });
 
@@ -1460,13 +1815,39 @@ define(function (require, exports, module) {
             }, 0);
             return;
         }
-        // Click on subtask input — don't propagate
-        if ($tgt.is(".td-subtask-input")) {
+        // Click on subtask / edit input — don't propagate
+        if ($tgt.is(".td-subtask-input, .td-edit-input")) {
             e.stopPropagation();
+            return;
+        }
+        // Task title: single click completes, double click edits. The single click waits a beat so
+        // a double click can cancel it — otherwise the first click would re-render the row away.
+        if ($tgt.closest(".td-text").length) {
+            if (pendingToggle) { clearTimeout(pendingToggle); pendingToggle = null; }
+            if (e.detail >= 2) {
+                beginEdit(id);
+            } else {
+                pendingToggle = setTimeout(function () {
+                    pendingToggle = null;
+                    toggleDone(id);
+                }, 220);
+            }
             return;
         }
         // Default: toggle task done
         toggleDone(id);
+    });
+
+    // Edit field: Enter saves, Escape cancels (without closing the panel), blur saves.
+    $panel.find(".td-pending-list, .td-completed-list").on("keydown", ".td-edit-input", function (e) {
+        e.stopPropagation();
+        const id = Number($(this).closest(".td-item").attr("data-id"));
+        if (e.key === "Enter")  { e.preventDefault(); commitEdit(id, $(this).val()); }
+        if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
+    });
+    $panel.find(".td-pending-list, .td-completed-list").on("blur", ".td-edit-input", function () {
+        const id = Number($(this).closest(".td-item").attr("data-id"));
+        commitEdit(id, $(this).val());
     });
 
     // Subtask input: Enter to add
@@ -1489,9 +1870,11 @@ define(function (require, exports, module) {
 
     // Keyboard nav on tasks (toggle/delete)
     $panel.find(".td-pending-list, .td-completed-list").on("keydown", ".td-item", function (e) {
-        if ($(e.target).is(".td-subtask-input")) { return; } // input handles its own
+        // Inputs handle their own keys — Backspace in an edit field must never delete the task.
+        if ($(e.target).is("input")) { return; }
         const id = Number($(this).attr("data-id"));
-        if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleDone(id); }
+        if (e.key === "F2") { e.preventDefault(); beginEdit(id); }
+        else if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggleDone(id); }
         else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteTask(id); }
     });
 
@@ -1536,6 +1919,11 @@ define(function (require, exports, module) {
         else if (action === "sort-due")           { setSortBy("due"); }
         else if (action === "sort-priority")      { setSortBy("priority"); }
         else if (action === "toggle-code-scan")   { toggleCodeScanning(); }
+        else if (action === "toggle-stats")       {
+            store.statsVisible = !store.statsVisible;
+            saveStore();
+            renderList();
+        }
         else if (action === "rescan")             {
             const pk = projectKey();
             if (pk) { delete scanCache[pk]; }
@@ -1576,6 +1964,63 @@ define(function (require, exports, module) {
         const overdue = countOverdueAcrossAll();
         if (overdue > 0) { $badge.text(overdue > 99 ? "99+" : String(overdue)).show(); }
         else { $badge.hide(); }
+        updateStatusIndicator();
+    }
+
+    // -------- Status bar --------
+    let statusMounted = false;
+    const $statusIndicator = $(
+        '<div class="td-status" role="button" tabindex="0">' +
+            '<svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" ' +
+                'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                '<rect x="3" y="3" width="14" height="14" rx="2.5"/>' +
+                '<path d="M6.5 10 L9 12.5 L14 7.5"/>' +
+            '</svg>' +
+            '<span class="td-status-label"></span>' +
+        '</div>'
+    );
+    // What's on your plate right now: this project + Global, due today or already overdue.
+    function countDueNow() {
+        const today = startOfToday();
+        const endOfToday = addDays(today, 1);
+        const scopes = [GLOBAL_KEY];
+        const pk = projectKey();
+        if (pk) { scopes.push(pk); }
+        let due = 0, overdue = 0;
+        scopes.forEach(function (k) {
+            (store.projects[k] || []).forEach(function (t) {
+                if (t.done || !t.dueAt || t.dueAt >= endOfToday) { return; }
+                due++;
+                if (t.dueAt < today) { overdue++; }
+            });
+        });
+        return { due: due, overdue: overdue };
+    }
+    function updateStatusIndicator() {
+        if (!statusMounted) { return; }
+        const c = countDueNow();
+        $statusIndicator.find(".td-status-label").text(c.due + " due");
+        const tip = c.overdue
+            ? c.due + " due today or overdue (" + c.overdue + " overdue) — click to open todu"
+            : c.due + " due today — click to open todu";
+        // updateIndicator replaces the class attribute wholesale, so the full class list goes in.
+        const cls = "indicator td-status" + (c.overdue ? " td-status-overdue" : "");
+        try {
+            StatusBar.updateIndicator(STATUS_INDICATOR_ID, c.due > 0, cls, tip);
+        } catch (e) { /* non-fatal */ }
+    }
+    function mountStatusIndicator() {
+        try {
+            StatusBar.addIndicator(STATUS_INDICATOR_ID, $statusIndicator, false, "td-status", "todu");
+            statusMounted = true;
+        } catch (e) { statusMounted = false; }
+        $statusIndicator.on("click", function (e) {
+            e.preventDefault();
+            togglePanel();
+        });
+        $statusIndicator.on("keydown", function (e) {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); togglePanel(); }
+        });
     }
 
     function positionPanel() {
@@ -1627,7 +2072,8 @@ define(function (require, exports, module) {
             closeDatePopover();
         }
         if (!$panel.is(":visible")) { return; }
-        if ($(e.target).closest("#td-dropdown, #td-toolbar-btn, .td-date-popover").length) { return; }
+        // The status bar count is a toggle too — let its own click close the panel, not this.
+        if ($(e.target).closest("#td-dropdown, #td-toolbar-btn, .td-date-popover, .td-status").length) { return; }
         closePanel();
     });
     $(document).on("keydown.tdroot", function (e) {
@@ -1675,6 +2121,8 @@ define(function (require, exports, module) {
         }
         const TOGGLE_CMD_ID = "todoDropdown.toggle";
         CommandManager.register("Toggle To-Do List", TOGGLE_CMD_ID, togglePanel);
+        // Registered before the menu item so the shortcut shows next to it in View.
+        try { KeyBindingManager.addBinding(TOGGLE_CMD_ID, TOGGLE_SHORTCUT); } catch (e) { /* non-fatal */ }
         const viewMenu = Menus.getMenu(Menus.AppMenuBar.VIEW_MENU);
         if (viewMenu) { viewMenu.addMenuItem(TOGGLE_CMD_ID); }
 
@@ -1684,6 +2132,7 @@ define(function (require, exports, module) {
         } catch (e) { /* non-fatal */ }
 
         applyTheme();
+        mountStatusIndicator();
         renderList();
         startReminderLoop();
         console.log("todu ready.");
