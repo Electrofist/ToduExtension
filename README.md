@@ -27,6 +27,14 @@ Everything else — due dates, priority, tags, subtasks — is the polish on top
 - **Due dates** via quick presets (Today / Tomorrow / This weekend / Next week) — chips color-code overdue / today / soon
 - **Subtasks** with collapsible progress (e.g. "2/4"). When all subtasks are done, the parent gets a subtle "ready to complete" glow — without auto-checking, so you stay in control.
 
+### Reminders & recurring
+- **Reminders** at 9:00 AM / 12:00 PM / 6:00 PM on a task's due date — a clock chip shows the time, and turns amber once it's passed
+- **A reminder that came due while Phoenix was closed still fires** the next time you open it, so shutting the editor never silently eats one
+- **Actionable toast** — Open (jumps to the task), Snooze 10m, or Mark done, right from the notification
+- **Several at once collapse into a digest** ("4 reminders due") instead of burying you in a stack of toasts
+- **Recurring tasks** — Daily / Weekdays / Weekly / Monthly. Completing one **rolls it forward** to its next occurrence instead of finishing it, resets its subtasks, and carries the reminder time along
+- **Missed occurrences are skipped** — finish a daily task you ignored for a week and it lands on tomorrow, not last Tuesday
+
 ### Code-aware
 - **Right-click any line in the editor → "Add line to To-Do"** — captures the line as a task with a `file:line` chip
 - **Click the chip** → editor jumps back to that exact file and line
@@ -72,6 +80,9 @@ The checked-box icon will appear in the right-side toolbar. Click it to open the
 | **Mark done** | Click the checkbox or anywhere on the row |
 | **Set priority** | Click the small dot on the left to cycle |
 | **Set due date** | Click the calendar icon → pick a preset |
+| **Set a reminder** | Click the calendar icon → **Remind me** → pick a time |
+| **Repeat a task** | Click the calendar icon → **Repeat** → Daily / Weekdays / Weekly / Monthly |
+| **Snooze a reminder** | **Snooze 10m** on the reminder toast |
 | **Add a subtask** | Hover a task → "+ Subtask" → type, press Enter |
 | **Delete** | Hover → click the trash icon (or Backspace when focused) |
 | **Pin a code line as a task** | Right-click any line in the editor → "Add line to To-Do" |
@@ -94,10 +105,9 @@ Possible additions, not promises:
 
 - **Edit tasks in place** (double-click)
 - **Drag to reorder**
-- **Reminders** with notifications (time-based)
-- **Recurring tasks** (daily / weekly)
 - **Import / export** JSON
 - **Completion stats** ("12 done this week")
+- **Custom reminder times** (any hour, not just the three presets)
 
 Open an issue if any of these would matter to your workflow — it helps me prioritize.
 

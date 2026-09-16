@@ -812,3 +812,133 @@
 }
 .td-body::-webkit-scrollbar-thumb:hover { background: var(--td-text-muted); }
 .td-body::-webkit-scrollbar-track { background: transparent; }
+
+/* -------- Reminder + repeat chips -------- */
+
+.td-remind-chip,
+.td-repeat-chip {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 7px 1px 6px;
+    background: var(--td-bg-chip);
+    color: var(--td-text-soft);
+    border: none;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    line-height: 1.5;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+.td-remind-chip svg { flex: 0 0 11px; }
+.td-repeat-icon { font-size: 11px; line-height: 1; }
+.td-remind-chip:hover,
+.td-repeat-chip:hover {
+    background: var(--td-bg-chip-hover);
+    color: var(--td-text);
+}
+/* A reminder whose moment has already passed reads like an overdue due-date. */
+.td-remind-chip.td-remind-past {
+    background: var(--td-warning-bg);
+    color: var(--td-warning);
+}
+
+/* -------- Popover: remind + repeat sections -------- */
+
+.td-date-section-label {
+    padding: 6px 10px 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--td-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.td-opt-check {
+    margin-left: auto;
+    width: 12px;
+    color: var(--td-accent);
+    visibility: hidden;
+    font-size: 11px;
+}
+.td-date-option.td-opt-selected { color: var(--td-accent); }
+.td-date-option.td-opt-selected .td-opt-check { visibility: visible; }
+/* Three sections make this tall — scroll inside rather than run off the viewport. */
+.td-date-popover {
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+/* -------- Reminder toast --------
+   Toasts render in Phoenix's #toast-notification-container, outside #td-dropdown, so none of the
+   --td-* theme tokens reach here. Everything below is deliberately theme-agnostic: inherited
+   color, currentColor borders, and neutral greys that read on light and dark toast surfaces. */
+
+.td-toast {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 210px;
+    max-width: 300px;
+}
+.td-toast-text {
+    font-size: 13px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+.td-toast-line {
+    position: relative;
+    padding-left: 11px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    opacity: 0.9;
+    word-break: break-word;
+}
+.td-toast-line::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    opacity: 0.6;
+}
+.td-toast-meta {
+    font-size: 11px;
+    opacity: 0.65;
+}
+.td-toast-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 2px;
+}
+.td-toast-btn {
+    padding: 3px 9px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.5;
+    color: inherit;
+    background: transparent;
+    border: 1px solid currentColor;
+    border-radius: 5px;
+    opacity: 0.72;
+    cursor: pointer;
+    transition: opacity 0.12s ease, background-color 0.12s ease;
+}
+.td-toast-btn:hover { opacity: 1; background: rgba(127, 127, 127, 0.18); }
+.td-toast-btn-primary { opacity: 1; font-weight: 600; }
+
+/* -------- Row highlights -------- */
+
+/* Revealing a task from a reminder toast. */
+@keyframes tdFlash {
+    0%, 100% { background: transparent; }
+    25%, 60% { background: var(--td-accent-soft); }
+}
+.td-item.td-flash { animation: tdFlash 1.1s ease-in-out; }
+
+/* A repeating task rolling forward to its next occurrence instead of completing. */
+@keyframes tdRolled {
+    0%   { background: var(--td-accent-soft); }
+    100% { background: transparent; }
+}
+.td-item.td-rolled { animation: tdRolled 1.1s ease-out; }

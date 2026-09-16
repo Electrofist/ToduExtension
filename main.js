@@ -18,6 +18,11 @@ define(function (require, exports, module) {
           Commands           = brackets.getModule("command/Commands"),
           Menus              = brackets.getModule("command/Menus");
 
+    // Optional: older Phoenix/Brackets builds may not ship NotificationUI. Reminders degrade to a
+    // console line + the toolbar badge rather than breaking the whole extension on load.
+    let NotificationUI = null;
+    try { NotificationUI = brackets.getModule("widgets/NotificationUI"); } catch (e) { NotificationUI = null; }
+
     ExtensionUtils.loadStyleSheet(module, "style.css");
 
     // -------- Constants --------
@@ -41,6 +46,28 @@ define(function (require, exports, module) {
     const TAG_RX  = /#([a-zA-Z][a-zA-Z0-9_-]{0,30})/g;
 
     const PRIORITY_ORDER = [null, "high", "medium", "low"];
+
+    // Reminder presets. A reminder is an absolute timestamp; these just pick the time-of-day that
+    // gets stamped onto the task's due date.
+    const REMIND_TIMES = [
+        { id: "morning",   label: "9:00 AM",  hour: 9,  minute: 0 },
+        { id: "noon",      label: "12:00 PM", hour: 12, minute: 0 },
+        { id: "evening",   label: "6:00 PM",  hour: 18, minute: 0 }
+    ];
+    const REPEAT_OPTIONS = [
+        { id: "daily",    label: "Daily"    },
+        { id: "weekdays", label: "Weekdays" },
+        { id: "weekly",   label: "Weekly"   },
+        { id: "monthly",  label: "Monthly"  }
+    ];
+    const REPEAT_IDS = REPEAT_OPTIONS.map(function (o) { return o.id; });
+
+    const REMINDER_TICK_MS = 30 * 1000;
+    const SNOOZE_MS        = 10 * 60 * 1000;
+    // A task left repeating + untouched for years shouldn't spin the roll-forward loop forever.
+    const MAX_ROLL_STEPS   = 2000;
+    // How many task titles a digest toast names before it says "+N more".
+    const DIGEST_LIST_CAP  = 3;
     // Curated tag hues distributed around the wheel so adjacent tags don't collide.
     const TAG_HUES = [355, 25, 45, 130, 175, 210, 260, 305];
 
@@ -93,6 +120,13 @@ define(function (require, exports, module) {
             createdAt: t.createdAt || Date.now(),
             codeLink:  t.codeLink || null,
             dueAt:     (typeof t.dueAt === "number") ? t.dueAt : null,
+            // Absolute timestamp for the reminder, and the time it actually fired. remindedAt is
+            // what stops a reminder re-firing every tick — and leaving it null is exactly what lets
+            // a reminder that came due while Phoenix was shut fire on the next launch.
+            remindAt:   (typeof t.remindAt   === "number") ? t.remindAt   : null,
+            remindedAt: (typeof t.remindedAt === "number") ? t.remindedAt : null,
+            repeat:     (REPEAT_IDS.indexOf(t.repeat) !== -1) ? t.repeat : null,
+            timesCompleted: (typeof t.timesCompleted === "number") ? t.timesCompleted : 0,
             priority:  t.priority || null,
             tags:      Array.isArray(t.tags) ? t.tags : extractTags(t.text || ""),
             subtasks:  Array.isArray(t.subtasks) ? t.subtasks.map(function (s) {
@@ -122,12 +156,20 @@ define(function (require, exports, module) {
         return store.projects[key];
     }
     function currentTasks() { return tasksForScope(activeScopeKey()); }
-    function mutateCurrentTasks(fn) {
-        const key  = activeScopeKey();
+    function mutateScope(key, fn) {
         const list = store.projects[key] || [];
         const next = fn(list);
         store.projects[key] = Array.isArray(next) ? next : list;
         saveStore();
+    }
+    function mutateCurrentTasks(fn) { mutateScope(activeScopeKey(), fn); }
+    // Reminders fire for every scope, not just the visible tab, so toast actions need to edit a
+    // task in whichever project owns it.
+    function mutateTaskInScope(scopeKey, taskId, fn) {
+        mutateScope(scopeKey, function (list) {
+            list.forEach(function (t) { if (t.id === taskId) { fn(t); } });
+            return list;
+        });
     }
 
     // -------- Helpers --------
@@ -195,6 +237,66 @@ define(function (require, exports, module) {
             label: due.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
             tone:  "future"
         };
+    }
+
+    // -------- Reminders & recurrence --------
+    function startOfDay(ts) {
+        const d = new Date(ts);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    }
+    // Build "this date, at this time". Going through Date (rather than adding hour*3600000 to a
+    // midnight stamp) keeps the wall-clock time correct across DST boundaries.
+    function atTimeOnDate(dateTs, hour, minute) {
+        const d = new Date(dateTs);
+        d.setHours(hour, minute, 0, 0);
+        return d.getTime();
+    }
+    function formatTime(ts) {
+        return new Date(ts).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    }
+    // Which preset (if any) a reminder's time-of-day corresponds to — so the popover can tick it.
+    // A snoozed reminder lands on an arbitrary minute and simply matches nothing.
+    function remindIdFor(ts) {
+        if (!ts) { return "clear"; }
+        const d = new Date(ts);
+        const match = REMIND_TIMES.filter(function (r) {
+            return r.hour === d.getHours() && r.minute === d.getMinutes();
+        })[0];
+        return match ? match.id : null;
+    }
+    function repeatLabel(id) {
+        const match = REPEAT_OPTIONS.filter(function (o) { return o.id === id; })[0];
+        return match ? match.label : null;
+    }
+    function advanceOnce(ts, freq) {
+        const d = new Date(ts);
+        if (freq === "weekly") {
+            d.setDate(d.getDate() + 7);
+        } else if (freq === "monthly") {
+            // Clamp to the target month's length so Jan 31 + 1 month is Feb 28, not Mar 3.
+            const dayOfMonth = d.getDate();
+            d.setDate(1);
+            d.setMonth(d.getMonth() + 1);
+            const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+            d.setDate(Math.min(dayOfMonth, daysInMonth));
+        } else if (freq === "weekdays") {
+            d.setDate(d.getDate() + 1);
+            while (d.getDay() === 0 || d.getDay() === 6) { d.setDate(d.getDate() + 1); }
+        } else {
+            d.setDate(d.getDate() + 1);
+        }
+        return d.getTime();
+    }
+    // Next occurrence strictly at or after notBefore. Skipping past missed occurrences is what
+    // stops a daily task you ignored for a week from rolling forward to last Tuesday.
+    function nextOccurrence(ts, freq, notBefore) {
+        let next = advanceOnce(ts, freq);
+        let steps = 0;
+        while (next < notBefore && steps < MAX_ROLL_STEPS) {
+            next = advanceOnce(next, freq);
+            steps++;
+        }
+        return next;
     }
 
     // -------- Theme --------
@@ -348,6 +450,30 @@ define(function (require, exports, module) {
             '<button type="button" class="td-date-option td-date-clear" data-preset="clear">' +
                 '<span class="td-date-icon">×</span><span>No date</span>' +
             '</button>' +
+            '<div class="td-date-divider"></div>' +
+            '<div class="td-date-section-label">Remind me</div>' +
+            REMIND_TIMES.map(function (r) {
+                return '<button type="button" class="td-date-option" data-remind="' + r.id + '">' +
+                    '<span class="td-date-icon">◷</span><span>' + r.label + '</span>' +
+                    '<span class="td-opt-check">✓</span>' +
+                '</button>';
+            }).join("") +
+            '<button type="button" class="td-date-option td-date-clear" data-remind="clear">' +
+                '<span class="td-date-icon">×</span><span>No reminder</span>' +
+                '<span class="td-opt-check">✓</span>' +
+            '</button>' +
+            '<div class="td-date-divider"></div>' +
+            '<div class="td-date-section-label">Repeat</div>' +
+            REPEAT_OPTIONS.map(function (o) {
+                return '<button type="button" class="td-date-option" data-repeat="' + o.id + '">' +
+                    '<span class="td-date-icon">↻</span><span>' + o.label + '</span>' +
+                    '<span class="td-opt-check">✓</span>' +
+                '</button>';
+            }).join("") +
+            '<button type="button" class="td-date-option td-date-clear" data-repeat="never">' +
+                '<span class="td-date-icon">×</span><span>Never</span>' +
+                '<span class="td-opt-check">✓</span>' +
+            '</button>' +
         '</div>'
     ).appendTo("body");
 
@@ -404,6 +530,13 @@ define(function (require, exports, module) {
             '<path d="M2.5 6.5 h11"/>' +
             '<path d="M5.5 2.5 v2"/>' +
             '<path d="M10.5 2.5 v2"/>' +
+        '</svg>';
+
+    const CLOCK_ICON_SVG =
+        '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" ' +
+            'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+            '<circle cx="8" cy="8" r="5.5"/>' +
+            '<path d="M8 5 v3.2 l2.2 1.3"/>' +
         '</svg>';
 
     // -------- Code scanner (M3) --------
@@ -556,6 +689,36 @@ define(function (require, exports, module) {
         return $chip;
     }
 
+    // -------- Render: reminder + repeat chips --------
+    function buildRemindChip(remindAt) {
+        const $chip = $(
+            '<button type="button" class="td-remind-chip" title="Change reminder">' +
+                CLOCK_ICON_SVG +
+                '<span class="td-remind-label"></span>' +
+            '</button>'
+        );
+        if (remindAt < Date.now()) { $chip.addClass("td-remind-past"); }
+        $chip.find(".td-remind-label").text(formatTime(remindAt));
+        return $chip;
+    }
+    function buildRepeatChip(repeat) {
+        const $chip = $(
+            '<button type="button" class="td-repeat-chip" title="Change repeat">' +
+                '<span class="td-repeat-icon">↻</span>' +
+                '<span class="td-repeat-label"></span>' +
+            '</button>'
+        );
+        $chip.find(".td-repeat-label").text(repeatLabel(repeat) || "");
+        return $chip;
+    }
+
+    function flashRow(taskId, cls) {
+        const $li = $panel.find('.td-item[data-id="' + taskId + '"]');
+        if (!$li.length) { return; }
+        $li.addClass(cls);
+        setTimeout(function () { $li.removeClass(cls); }, 1100);
+    }
+
     // -------- Render: priority dot --------
     function buildPriorityDot(priority) {
         const $d = $('<button type="button" class="td-priority" title="Set priority" aria-label="Set priority"></button>');
@@ -640,6 +803,8 @@ define(function (require, exports, module) {
         // Due chip / "+date" affordance — append to the text row
         const $textRow = $li.find(".td-text-row");
         $textRow.append(buildDueChip(task.dueAt));
+        if (task.remindAt) { $textRow.append(buildRemindChip(task.remindAt)); }
+        if (task.repeat)   { $textRow.append(buildRepeatChip(task.repeat)); }
 
         // Code link (if any)
         if (task.codeLink && task.codeLink.file) {
@@ -827,11 +992,13 @@ define(function (require, exports, module) {
         renderList();
     }
     function toggleDone(id) {
+        let outcome = null;
         mutateCurrentTasks(function (list) {
-            list.forEach(function (t) { if (t.id === id) { t.done = !t.done; } });
+            list.forEach(function (t) { if (t.id === id) { outcome = applyCompletion(t); } });
             return list;
         });
         renderList();
+        if (outcome === "rolled") { flashRow(id, "td-rolled"); }
     }
     function deleteTask(id) {
         delete store.expandedSubtasks[id];
@@ -883,10 +1050,79 @@ define(function (require, exports, module) {
     }
     function setDueAt(id, ts) {
         mutateCurrentTasks(function (list) {
-            list.forEach(function (t) { if (t.id === id) { t.dueAt = ts; } });
+            list.forEach(function (t) {
+                if (t.id !== id) { return; }
+                t.dueAt = ts;
+                // Keep an existing reminder pinned to the due date: same time of day, new day.
+                if (t.remindAt) {
+                    if (!ts) {
+                        t.remindAt = null;
+                    } else {
+                        const prev = new Date(t.remindAt);
+                        t.remindAt = atTimeOnDate(ts, prev.getHours(), prev.getMinutes());
+                    }
+                    t.remindedAt = null;
+                }
+            });
             return list;
         });
         renderList();
+    }
+    function setRemindTime(id, remindId) {
+        mutateCurrentTasks(function (list) {
+            list.forEach(function (t) {
+                if (t.id !== id) { return; }
+                if (remindId === "clear") {
+                    t.remindAt = null;
+                    t.remindedAt = null;
+                    return;
+                }
+                const spec = REMIND_TIMES.filter(function (r) { return r.id === remindId; })[0];
+                if (!spec) { return; }
+                // A reminder needs a day to sit on. With no due date set, use today — or tomorrow
+                // if that time already passed, so a new reminder is never born already overdue.
+                const base = t.dueAt || startOfToday();
+                let when = atTimeOnDate(base, spec.hour, spec.minute);
+                if (!t.dueAt && when <= Date.now()) {
+                    when = atTimeOnDate(base + 86400000, spec.hour, spec.minute);
+                }
+                t.remindAt = when;
+                t.remindedAt = null;
+                if (!t.dueAt) { t.dueAt = startOfDay(when); }
+            });
+            return list;
+        });
+        renderList();
+    }
+    function setRepeat(id, repeatId) {
+        mutateCurrentTasks(function (list) {
+            list.forEach(function (t) {
+                if (t.id === id) { t.repeat = (repeatId === "never") ? null : repeatId; }
+            });
+            return list;
+        });
+        renderList();
+    }
+
+    // Completing a repeating task advances it to its next occurrence instead of finishing it, so
+    // it stays a live task. Subtasks reset for the new cycle.
+    function rollForward(t) {
+        const anchor = t.dueAt || startOfToday();
+        // notBefore = tomorrow: finishing today's occurrence must land on the next one, not today.
+        const nextDue = nextOccurrence(anchor, t.repeat, startOfToday() + 86400000);
+        if (t.remindAt) {
+            const prev = new Date(t.remindAt);
+            t.remindAt = atTimeOnDate(nextDue, prev.getHours(), prev.getMinutes());
+        }
+        t.dueAt = nextDue;
+        t.remindedAt = null;
+        t.timesCompleted = (t.timesCompleted || 0) + 1;
+        t.subtasks.forEach(function (s) { s.done = false; });
+    }
+    function applyCompletion(t) {
+        if (!t.done && t.repeat) { rollForward(t); return "rolled"; }
+        t.done = !t.done;
+        return t.done ? "done" : "reopened";
     }
 
     // Subtask mutations
@@ -961,9 +1197,24 @@ define(function (require, exports, module) {
     // -------- Date popover state --------
     let datePopoverTaskId = null;
 
+    function findCurrentTask(id) {
+        return currentTasks().filter(function (t) { return t.id === id; })[0] || null;
+    }
+    function refreshPopoverSelection(task) {
+        $datePopover.find("[data-remind], [data-repeat]").removeClass("td-opt-selected");
+        if (!task) { return; }
+        // A snoozed reminder sits on an arbitrary minute and matches no preset — nothing ticks.
+        const remindId = remindIdFor(task.remindAt);
+        if (remindId) {
+            $datePopover.find('[data-remind="' + remindId + '"]').addClass("td-opt-selected");
+        }
+        $datePopover.find('[data-repeat="' + (task.repeat || "never") + '"]')
+            .addClass("td-opt-selected");
+    }
     function openDatePopover(forTaskId, $anchor) {
         datePopoverTaskId = forTaskId;
         updateDatePresetHints();
+        refreshPopoverSelection(findCurrentTask(forTaskId));
         $datePopover.show();
         const r = $anchor.get(0).getBoundingClientRect();
         const pw = $datePopover.outerWidth() || 220;
@@ -972,6 +1223,9 @@ define(function (require, exports, module) {
         let top  = r.bottom + 4;
         if (left + pw > window.innerWidth - 8) { left = window.innerWidth - pw - 8; }
         if (top + ph > window.innerHeight - 8) { top = r.top - ph - 4; }
+        // With three sections the popover is tall enough to miss both above and below the anchor;
+        // clamp into the viewport and let CSS scroll it rather than letting it run off-screen.
+        if (top < 8) { top = Math.max(8, window.innerHeight - ph - 8); }
         $datePopover.css({ left: left + "px", top: top + "px" });
     }
     function closeDatePopover() {
@@ -980,12 +1234,147 @@ define(function (require, exports, module) {
     }
     $datePopover.on("click", ".td-date-option", function (e) {
         e.stopPropagation();
-        const preset = $(this).attr("data-preset");
-        if (datePopoverTaskId) {
-            setDueAt(datePopoverTaskId, presetToTs(preset));
+        if (!datePopoverTaskId) { closeDatePopover(); return; }
+        const $opt   = $(this);
+        const taskId = datePopoverTaskId;
+        const preset = $opt.attr("data-preset");
+        const remind = $opt.attr("data-remind");
+        const repeat = $opt.attr("data-repeat");
+
+        if (preset !== undefined) {
+            // Picking a date closes the popover — unchanged from how this has always behaved.
+            setDueAt(taskId, presetToTs(preset));
+            closeDatePopover();
+            return;
         }
-        closeDatePopover();
+        if (remind !== undefined)      { setRemindTime(taskId, remind); }
+        else if (repeat !== undefined) { setRepeat(taskId, repeat); }
+        // Reminder and repeat are settings rather than a one-shot pick, so the popover stays open
+        // to let both be set in one visit. Esc or an outside click closes it.
+        datePopoverTaskId = taskId;
+        refreshPopoverSelection(findCurrentTask(taskId));
     });
+
+    // -------- Reminder scheduler --------
+    let reminderTimer = null;
+
+    function dueReminders(now) {
+        const out = [];
+        Object.keys(store.projects).forEach(function (scopeKey) {
+            (store.projects[scopeKey] || []).forEach(function (t) {
+                if (!t.done && t.remindAt && !t.remindedAt && t.remindAt <= now) {
+                    out.push({ scope: scopeKey, task: t });
+                }
+            });
+        });
+        return out;
+    }
+    function scopeLabel(scopeKey) {
+        return scopeKey === GLOBAL_KEY ? "Global" : baseName(scopeKey.replace(/[\\\/]$/, ""));
+    }
+    function focusTask(entry) {
+        const isGlobal = entry.scope === GLOBAL_KEY;
+        // A reminder can belong to a project that isn't the open one; we can only reveal the task
+        // when its scope is reachable from here.
+        const reachable = isGlobal || entry.scope === projectKey();
+        if (reachable) {
+            store.activeTab = isGlobal ? "global" : "project";
+            saveStore();
+        }
+        openPanel();
+        if (!reachable) { return; }
+        setTimeout(function () {
+            const $li = $panel.find('.td-item[data-id="' + entry.task.id + '"]');
+            if (!$li.length) { return; }
+            if ($li.get(0).scrollIntoView) { $li.get(0).scrollIntoView({ block: "center" }); }
+            flashRow(entry.task.id, "td-flash");
+        }, 30);
+    }
+    function snoozeReminder(entry) {
+        mutateTaskInScope(entry.scope, entry.task.id, function (t) {
+            t.remindAt   = Date.now() + SNOOZE_MS;
+            t.remindedAt = null;
+        });
+        renderList();
+    }
+    function completeFromToast(entry) {
+        mutateTaskInScope(entry.scope, entry.task.id, function (t) { applyCompletion(t); });
+        renderList();
+    }
+    function toastAction(label, primary) {
+        return $('<button type="button" class="td-toast-btn"></button>')
+            .addClass(primary ? "td-toast-btn-primary" : "")
+            .text(label);
+    }
+    function reminderToastStyle() {
+        return (NotificationUI.NOTIFICATION_STYLES_CSS_CLASS &&
+                NotificationUI.NOTIFICATION_STYLES_CSS_CLASS.SUBTLE) || "style-info";
+    }
+    function showReminderToast(entry) {
+        const t = entry.task;
+        if (!NotificationUI) { console.log("[todu] Reminder due:", t.text); return; }
+
+        const $tpl = $('<div class="td-toast"></div>');
+        $('<div class="td-toast-text"></div>').text(t.text).appendTo($tpl);
+        const meta = [scopeLabel(entry.scope)];
+        if (t.repeat) { meta.push(repeatLabel(t.repeat)); }
+        $('<div class="td-toast-meta"></div>').text(meta.join(" · ")).appendTo($tpl);
+
+        const $actions = $('<div class="td-toast-actions"></div>').appendTo($tpl);
+        const $open    = toastAction("Open").appendTo($actions);
+        const $snooze  = toastAction("Snooze 10m").appendTo($actions);
+        const $done    = toastAction(t.repeat ? "Done for now" : "Mark done", true).appendTo($actions);
+
+        const note = NotificationUI.createToastFromTemplate("Reminder", $tpl, {
+            // This toast carries actions, so a stray click must not eat them.
+            dismissOnClick: false,
+            toastStyle: reminderToastStyle(),
+            instantOpen: true
+        });
+        $open.on("click",   function () { note.close(); focusTask(entry); });
+        $snooze.on("click", function () { note.close(); snoozeReminder(entry); });
+        $done.on("click",   function () { note.close(); completeFromToast(entry); });
+    }
+    function showDigestToast(entries) {
+        if (!NotificationUI) {
+            console.log("[todu] " + entries.length + " reminders due");
+            return;
+        }
+        const $tpl = $('<div class="td-toast"></div>');
+        entries.slice(0, DIGEST_LIST_CAP).forEach(function (e) {
+            $('<div class="td-toast-line"></div>').text(e.task.text).appendTo($tpl);
+        });
+        if (entries.length > DIGEST_LIST_CAP) {
+            $('<div class="td-toast-meta"></div>')
+                .text("+" + (entries.length - DIGEST_LIST_CAP) + " more")
+                .appendTo($tpl);
+        }
+        const $actions = $('<div class="td-toast-actions"></div>').appendTo($tpl);
+        const $open = toastAction("Open todu", true).appendTo($actions);
+        const note = NotificationUI.createToastFromTemplate(
+            entries.length + " reminders due", $tpl,
+            { dismissOnClick: false, toastStyle: reminderToastStyle(), instantOpen: true }
+        );
+        $open.on("click", function () { note.close(); openPanel(); });
+    }
+    function tickReminders() {
+        const now = Date.now();
+        const due = dueReminders(now);
+        if (!due.length) { return; }
+        // Stamp before showing: a reminder fires exactly once even if the toast throws. Many at
+        // once (typically a catch-up after the editor was closed) collapse into one digest.
+        due.forEach(function (e) { e.task.remindedAt = now; });
+        saveStore();
+        if (due.length === 1) { showReminderToast(due[0]); }
+        else                  { showDigestToast(due); }
+        if ($panel.is(":visible")) { renderList(); }
+        else                       { updateBadge(); }
+    }
+    function startReminderLoop() {
+        if (reminderTimer) { clearInterval(reminderTimer); }
+        tickReminders();
+        reminderTimer = setInterval(tickReminders, REMINDER_TICK_MS);
+    }
 
     // -------- Event wiring --------
     $addBtn.on("click", function () { addTask($input.val()); $input.val(""); });
@@ -1010,11 +1399,11 @@ define(function (require, exports, module) {
             cyclePriority(id);
             return;
         }
-        // Due chip / add date
-        if ($tgt.closest(".td-due-chip, .td-due-add").length) {
+        // Due / reminder / repeat chips all open the same scheduling popover
+        const CHIP_SEL = ".td-due-chip, .td-due-add, .td-remind-chip, .td-repeat-chip";
+        if ($tgt.closest(CHIP_SEL).length) {
             e.stopPropagation();
-            const $anchor = $tgt.closest(".td-due-chip, .td-due-add");
-            openDatePopover(id, $anchor);
+            openDatePopover(id, $tgt.closest(CHIP_SEL));
             return;
         }
         // Code link
@@ -1218,6 +1607,7 @@ define(function (require, exports, module) {
         setTimeout(function () { $input.trigger("focus"); }, 0);
         setTimeout(function () { $panel.removeClass("td-opening"); }, 200);
         ensureScan(false);
+        tickReminders();
     }
     function closePanel() {
         $menu.hide();
@@ -1295,6 +1685,7 @@ define(function (require, exports, module) {
 
         applyTheme();
         renderList();
-        console.log("Todo dropdown (final) ready.");
+        startReminderLoop();
+        console.log("todu ready.");
     });
 });
